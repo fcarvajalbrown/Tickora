@@ -40,10 +40,18 @@ function Format-Elapsed([timespan]$Span) {
 }
 
 if (-not $RuntimeRoot) { $RuntimeRoot = Find-RuntimeRoot }
+if (-not (Test-Path $RuntimeRoot)) {
+    Write-Host "Run folder $RuntimeRoot does not exist: no REA Ghidra run is active there." -ForegroundColor Yellow
+    exit 1
+}
 $logPath = Join-Path $RuntimeRoot 'ghidra.log'
 $started = (Get-Item $RuntimeRoot).CreationTime
 
 while ($true) {
+    if (-not (Test-Path $logPath)) {
+        Write-Host ("Run folder removed by REA after {0}: the run has ended. Check the REA command's exit code and output." -f (Format-Elapsed ((Get-Date) - $started))) -ForegroundColor Yellow
+        break
+    }
     $lines = @(Get-Content -Path $logPath -ErrorAction SilentlyContinue)
     $java = Get-GhidraJava $started
     $phase = Get-Phase $lines ($null -ne $java)
