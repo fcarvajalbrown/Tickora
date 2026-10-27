@@ -19,6 +19,16 @@ I work in Unreal and Godot. When an agent works on those engines it goes through
 
 The data model is an ECS and game logic is written as Rust crates. There is no visual editor in v1.
 
+## Scenario files
+
+A scenario is a JSON file with a seed, inputs at given ticks, a final tick and a list of assertions. An assertion can check the state or replay hash, the number of live entities, how many entities hold a component or a set of components, or one field of one entity. `scenarios/arena.json` runs the demo arena for 600 ticks with 16 assertions.
+
+```
+cargo run -p tickora-mcp -- scenario scenarios/arena.json
+```
+
+The command exits 0 when every assertion passes, 1 when one fails and 2 when a file can't be read or parsed. `--json` prints the full report. Over MCP, `tickora_run_scenario` takes a path or the scenario inline and runs it on its own simulation, so the agent's live one is left alone. The format is described in `docs/scenarios.md`.
+
 ## Inspired by HPL3
 
 Tickora takes ideas from HPL3, the Frictional Games engine behind SOMA, Amnesia: Rebirth and Amnesia: The Bunker, for example how its main loop schedules fixed steps and drives Newton physics.
