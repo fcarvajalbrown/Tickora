@@ -43,12 +43,6 @@ Tickora takes ideas from HPL3, the Frictional Games engine behind SOMA, Amnesia:
 
 ## Roadmap
 
-Planned order:
-
-1. Repository and simulation core with replay.
-2. MCP server over stdio.
-3. Scenario files and assertions.
-4. Screenshot capture.
-5. A demo game that an agent builds and proves.
+Tickora is built for first-person 3D games in the style of Frictional Games. Phases 1 to 4 (core, MCP server, scenarios, screenshots) are done. Next come the asset pipeline, a grey-box 3D renderer, audio, a demo set in an abandoned coal mine, and a public release. Live status is in [ROADMAP.md](ROADMAP.md) and every release is in [CHANGELOG.md](CHANGELOG.md).
 
 Platforms for v1 are Windows and Linux.

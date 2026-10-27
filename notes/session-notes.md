@@ -23,7 +23,7 @@ Current state:
 - Bunker main loop and tick answered in `research-private/bunker/NOTES.md`; the decompile and pyghidra-mcp indexes are built.
 
 Open:
-- Phase 5 (demo game and public release, after legal review) is in progress. Decided: a Bunker-style first-person 3D survival game (Frictional style means first-person 3D, never 2D or top-down) without combat (noise and light draw a monster, a generator burns limited fuel to keep the mine lit, reach the exit), set in a fictional abandoned coal mine inspired by Chile's southern mines; genre focus recorded in PRD.md section 5. Still to decide: how much 3D the renderer gets in phase 5, where it lives and the default host, what counts as proof and whether CI runs it, and the PRD 12 release items (name, license, release scope). Then the design doc for approval before code.
+- Plan of record is `ROADMAP.md` (phases 5 asset pipeline, 6 grey-box 3D renderer, 7 audio, 8 coal-mine demo, 9 public release, order confirmed by Felipe), with ADRs 0002 (first-person 3D target) and 0003 (grey-box 3D first, meshes and textures from generators) and the tool inventory in `docs/research/demo-toolkit.md`. Releases are in `CHANGELOG.md`; each phase is one `0.MINOR.0` version.
 - Tolerance presets: only `zero` and custom. Add `low`, `medium` and `high` when a renderer feature (anti-aliasing, textures, 3D) makes adapters differ, measured against the CI software adapters.
 - Only the `top` viewport exists; `perspective`, `front` and `side` are reserved and rejected until there is 3D.
 - MCP: one simulation per process, while 2026-07-28 says cross-request state should be addressed by an explicit identifier; fine for one agent. No `outputSchema` on tools, including `tickora_run_scenario`. No input-log export or replay tool.

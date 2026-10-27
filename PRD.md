@@ -102,13 +102,17 @@ Test strategy:
 
 ## 11. Phases and Milestones
 
-Proposed order, following dependencies. Not confirmed, no dates.
+Order follows dependencies, confirmed by Felipe; each phase is one `0.MINOR.0` release. Live status is in `ROADMAP.md`.
 
-1. Repository and simulation core with replay.
-2. MCP server over stdio.
-3. Scenario files and assertions.
-4. Screenshot capture with wgpu offscreen.
-5. Demo game and public release, after legal review.
+1. Repository and simulation core with replay (0.1.0).
+2. MCP server over stdio (0.2.0).
+3. Scenario files and assertions (0.3.0).
+4. Screenshot capture with wgpu offscreen (0.4.0).
+5. Asset pipeline: mesh and texture generators and CC0 sourcing (0.5.0).
+6. Grey-box 3D renderer (0.6.0).
+7. Audio (0.7.0).
+8. Coal-mine demo game with proof scenarios (0.8.0).
+9. Public release, after legal review (0.9.0).
 
 ## 12. Open Questions
 
