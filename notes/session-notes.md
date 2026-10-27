@@ -2,7 +2,7 @@
 
 Current state:
 - Repo is public at github.com/fcarvajalbrown/Tickora with README, description and 10 topics. CI (fmt, clippy, tests in debug and release) is green on windows-latest and ubuntu-latest, last run 40548279652 at 0d2bd6b.
-- PRD phases 1 and 2 are done. Phase 3 (scenario files with assertions) is next and starts with design decisions, not code.
+- PRD phases 1 and 2 are done. Phase 3 (scenario files with assertions) is in progress. Felipe chose JSON, all four assertion kinds (hashes, entity and component counts, query match counts, field values with Fx as raw or approx with tolerance), and both a CLI and an MCP tool, then approved the design written in `docs/scenarios.md`. Build order, one commit each: parser and validation, runner and checks, CLI subcommand, `Host::fresh` and `tickora_run_scenario`, `scenarios/` files and integration tests, notes and README. Out of scope: a record mode, non-arena sims, screenshot assertions.
 - `crates/tickora-core`, zero dependencies: `rng` (PCG32), `hash` (FNV-1a 64), `input` (tick-indexed `InputLog`, binary format `TKIL` v1), `sim` (`Sim` trait, `Runner`, chained `ReplayHash`, `first_divergence`), `fx` (ADR 0001: i64 Q32.32, saturating, i128 intermediates, `to_f32`/`to_f64` for derived output only), `ecs` (sparse sets, generational `Entity`, `Component` with `NAME`, `hash_into` and `fields`, `World` with `describe` and `query_names`, components hashed in registration order).
 - `crates/tickora-mcp`, dependencies `serde` and `serde_json` only (no derive feature): `jsonrpc`, `server` (`Server<H: Host>`, newline-delimited stdio generic over `BufRead` and `Write`, exit on EOF), `host` (`Host` trait), `tools`, `demo` (`Arena`, `Command`, `ArenaHost`), and a `tickora-mcp` binary serving the demo arena with seed 0.
 - Both MCP eras are served. A request whose `_meta` carries `io.modelcontextprotocol/protocolVersion` is handled as 2026-07-28: -32022 with `supported` and `requested` for other versions, -32602 without `clientCapabilities`, results carry `resultType: complete` and serverInfo in `_meta`, and `server/discover` and `tools/list` carry `ttlMs: 3600000` and `cacheScope: public`. Without it, `initialize` selects legacy (2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05 echoed, anything else gets 2025-11-25); other methods before `initialize` are -32602.
@@ -14,7 +14,6 @@ Current state:
 
 Open:
 - Felipe must approve the project MCP server `tickora` once: run `claude` in the repo and accept it.
-- Phase 3 decisions needed from Felipe: scenario file format (JSON needs no new dependency; TOML or RON would), what assertions can check, and whether scenarios run as a CLI, an MCP tool or both.
 - MCP: one simulation per process, while 2026-07-28 says cross-request state should be addressed by an explicit identifier; fine for one agent. No `outputSchema` on tools. No input-log export or replay tool.
 - ECS not done: derive macro (needs a dependency decision), systems or schedules, `query3` and above, the trig tables ADR 0001 calls for.
 - License: Felipe says proprietary for now, to discuss later; PRD.md still says MIT OR Apache-2.0, unchanged; no license files, no `license` field, `publish = false`.
