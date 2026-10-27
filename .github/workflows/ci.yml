@@ -46,6 +46,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Python tool tests
+        shell: bash
+        run: |
+          python -m pip install -q -r tools/requirements.txt
+          python -I -m unittest discover -s tests/tools -p 'test_*.py'
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --workspace
