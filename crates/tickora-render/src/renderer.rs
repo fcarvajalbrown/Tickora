@@ -3,7 +3,7 @@ use std::sync::mpsc;
 
 use wgpu::util::DeviceExt;
 
-use crate::camera::Camera;
+use crate::camera::OrthoCamera;
 use crate::image::Image;
 use crate::scene::{Layout, PixelRect, Scene};
 use crate::{MAX_SIZE, MIN_SIZE};
@@ -126,7 +126,7 @@ impl Renderer {
     pub fn render(
         &self,
         scene: &Scene,
-        camera: &Camera,
+        camera: &OrthoCamera,
         width: u32,
         height: u32,
     ) -> Result<(Image, Layout), String> {

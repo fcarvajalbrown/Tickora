@@ -1,4 +1,4 @@
-use tickora_render::{AdapterChoice, Camera, Fill, Grid, Quad, Renderer, Scene};
+use tickora_render::{AdapterChoice, Fill, Grid, OrthoCamera, Quad, Renderer, Scene};
 
 const BACKGROUND: [u8; 4] = [24, 24, 28, 255];
 const LINE: [u8; 4] = [48, 48, 56, 255];
@@ -46,7 +46,7 @@ fn scene() -> Scene {
 fn pixels_land_where_the_layout_says() {
     let renderer = renderer();
     let (image, layout) = renderer
-        .render(&scene(), &Camera::default(), 256, 256)
+        .render(&scene(), &OrthoCamera::default(), 256, 256)
         .unwrap();
     assert_eq!((image.width, image.height), (256, 256));
     assert_eq!(layout.off_screen, 1);
@@ -69,11 +69,11 @@ fn pixels_land_where_the_layout_says() {
 fn same_scene_gives_the_same_pixels() {
     let renderer = renderer();
     let first = renderer
-        .render(&scene(), &Camera::default(), 200, 120)
+        .render(&scene(), &OrthoCamera::default(), 200, 120)
         .unwrap()
         .0;
     let second = renderer
-        .render(&scene(), &Camera::default(), 200, 120)
+        .render(&scene(), &OrthoCamera::default(), 200, 120)
         .unwrap()
         .0;
     assert_eq!(first.pixel_hash(), second.pixel_hash());
@@ -87,7 +87,9 @@ fn empty_scene_is_all_background() {
         grid: None,
         quads: vec![],
     };
-    let (image, _) = renderer.render(&empty, &Camera::default(), 17, 33).unwrap();
+    let (image, _) = renderer
+        .render(&empty, &OrthoCamera::default(), 17, 33)
+        .unwrap();
     assert!(image.pixels.chunks(4).all(|pixel| pixel == BACKGROUND));
 }
 
@@ -107,12 +109,12 @@ fn rejects_sizes_out_of_range() {
     let renderer = renderer();
     assert!(
         renderer
-            .render(&scene(), &Camera::default(), 15, 64)
+            .render(&scene(), &OrthoCamera::default(), 15, 64)
             .is_err()
     );
     assert!(
         renderer
-            .render(&scene(), &Camera::default(), 64, 2049)
+            .render(&scene(), &OrthoCamera::default(), 64, 2049)
             .is_err()
     );
 }

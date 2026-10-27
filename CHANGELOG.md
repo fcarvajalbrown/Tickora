@@ -4,6 +4,10 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 
 ## [Unreleased]
 
+### Added
+
+- `perspective` viewport after Unreal's `LVT_Perspective`: camera string `perspective <x> <y> <z> <pitch> <yaw> <roll> <fov>` in BugItGo order, Unreal axes (centimetres, Z up, X forward), horizontal field of view, reversed-Z projection with an infinite far plane and a 10 cm near plane.
+
 ## [0.5.0]
 
 Asset pipeline: CC0 sourcing with SHA-256 manifests, seeded mesh generators and checks, PSX texture bake, credits.

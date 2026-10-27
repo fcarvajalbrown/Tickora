@@ -1,7 +1,9 @@
 use std::sync::OnceLock;
 
 use serde_json::{Value, json};
-use tickora_render::{AdapterChoice, Camera, DEFAULT_SIZE, Image, Renderer, ViewMode};
+use tickora_render::{
+    AdapterChoice, Camera, DEFAULT_SIZE, Image, OrthoCamera, Renderer, ViewMode, Viewport,
+};
 
 use crate::host::Host;
 
@@ -42,12 +44,15 @@ pub fn renderer() -> Result<&'static Renderer, String> {
 }
 
 pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
+    let Camera::Top(camera) = &shot.camera else {
+        return Err(PERSPECTIVE_PENDING.to_string());
+    };
     let renderer = renderer()?;
     let mut scene = host.scene(shot.view_mode);
     if !shot.show_grid {
         scene.grid = None;
     }
-    let (image, layout) = renderer.render(&scene, &shot.camera, shot.width, shot.height)?;
+    let (image, layout) = renderer.render(&scene, camera, shot.width, shot.height)?;
     let info = renderer.info();
     Ok(Capture {
         image,
@@ -60,6 +65,9 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
         }),
     })
 }
+
+const PERSPECTIVE_PENDING: &str =
+    "the perspective viewport is not wired to the simulation yet; use \"top\"";
 
 pub const SHOT_KEYS: [&str; 8] = [
     "viewport",
@@ -115,10 +123,14 @@ pub fn from_args(args: &serde_json::Map<String, Value>) -> Result<Shot, String> 
         None => {
             let viewport = match text("viewport")? {
                 Some(name) => name.parse()?,
-                None => defaults.camera.viewport,
+                None => defaults.camera.viewport(),
             };
+            if viewport == Viewport::Perspective {
+                return Err(PERSPECTIVE_PENDING.to_string());
+            }
+            let top = OrthoCamera::default();
             let location = match args.get("location") {
-                None => defaults.camera.location,
+                None => top.location,
                 Some(Value::Array(items)) if items.len() == 2 => {
                     let mut out = [0.0; 2];
                     for (slot, item) in out.iter_mut().zip(items) {
@@ -130,8 +142,8 @@ pub fn from_args(args: &serde_json::Map<String, Value>) -> Result<Shot, String> 
                 }
                 Some(_) => return Err("argument \"location\" must be two numbers".to_string()),
             };
-            let ortho_width = number("ortho_width")?.unwrap_or(defaults.camera.ortho_width);
-            Camera::new(viewport, location, ortho_width)?
+            let ortho_width = number("ortho_width")?.unwrap_or(top.ortho_width);
+            Camera::Top(OrthoCamera::new(location, ortho_width)?)
         }
     };
     let view_mode = match text("view_mode")? {
@@ -155,7 +167,6 @@ pub fn from_args(args: &serde_json::Map<String, Value>) -> Result<Shot, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tickora_render::Viewport;
 
     fn args(value: Value) -> serde_json::Map<String, Value> {
         value.as_object().unwrap().clone()
@@ -177,7 +188,7 @@ mod tests {
         assert_eq!(parts, string);
         assert_eq!(
             parts.camera,
-            Camera::new(Viewport::Top, [4.5, -2.0], 64.0).unwrap()
+            Camera::Top(OrthoCamera::new([4.5, -2.0], 64.0).unwrap())
         );
     }
 
@@ -186,6 +197,7 @@ mod tests {
         for bad in [
             json!({ "camera": "top 0 0 10", "ortho_width": 5 }),
             json!({ "viewport": "front" }),
+            json!({ "viewport": "perspective" }),
             json!({ "location": [1] }),
             json!({ "location": [1, "a"] }),
             json!({ "ortho_width": 0 }),

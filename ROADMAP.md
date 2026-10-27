@@ -22,7 +22,7 @@ Status: **Done** (0.1.0 to 0.5.0). Full text in the history.
 Status: **In Progress**. ADRs 0002 and 0003.
 
 1. Done. GLB reader dependency, approved by Felipe: `gltf =1.4.1` (MIT OR Apache-2.0), default features off, only `utils` and `names`.
-2. Not Started. `perspective` viewport (Unreal `ELevelViewportType`) and an eye-height camera string.
+2. In Progress. `perspective` viewport (Unreal `ELevelViewportType`) and an eye-height camera string. Camera, string and matrices done (render unit tests 34 to 42); the eye-height default waits on Felipe's number.
 3. Not Started. Depth buffer and mesh drawing.
 4. Not Started. Textures from the PSX bake.
 5. Not Started. Point lights with distance falloff (lamp, generator).

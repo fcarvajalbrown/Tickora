@@ -1,4 +1,4 @@
-use crate::camera::Camera;
+use crate::camera::OrthoCamera;
 
 pub type Color = [u8; 4];
 
@@ -90,7 +90,7 @@ struct Projection {
 }
 
 impl Projection {
-    fn new(camera: &Camera, width: u32, height: u32) -> Self {
+    fn new(camera: &OrthoCamera, width: u32, height: u32) -> Self {
         let scale = f64::from(width) / camera.ortho_width;
         let ortho_height = f64::from(height) / scale;
         Projection {
@@ -120,7 +120,7 @@ impl Projection {
 }
 
 impl Scene {
-    pub fn layout(&self, camera: &Camera, width: u32, height: u32) -> Layout {
+    pub fn layout(&self, camera: &OrthoCamera, width: u32, height: u32) -> Layout {
         let projection = Projection::new(camera, width, height);
         let mut rects = Vec::new();
         if let Some(grid) = &self.grid {
@@ -254,7 +254,6 @@ fn outline_or_fill(rect: PixelRect, fill: Fill, rects: &mut Vec<PixelRect>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::camera::Viewport;
 
     const RED: Color = [255, 0, 0, 255];
 
@@ -287,7 +286,8 @@ mod tests {
 
     #[test]
     fn origin_square_lands_in_the_centre() {
-        let layout = scene(vec![quad(0.0, 0.0, Fill::Solid)]).layout(&Camera::default(), 256, 256);
+        let layout =
+            scene(vec![quad(0.0, 0.0, Fill::Solid)]).layout(&OrthoCamera::default(), 256, 256);
         assert_eq!(
             layout.rects,
             vec![PixelRect {
@@ -304,14 +304,14 @@ mod tests {
     #[test]
     fn plus_y_is_up_and_plus_x_is_right() {
         let layout =
-            scene(vec![quad(10.0, 20.0, Fill::Solid)]).layout(&Camera::default(), 256, 256);
+            scene(vec![quad(10.0, 20.0, Fill::Solid)]).layout(&OrthoCamera::default(), 256, 256);
         let rect = layout.rects[0];
         assert_eq!((rect.x0, rect.y0), (136, 106));
     }
 
     #[test]
     fn camera_location_and_width_move_the_view() {
-        let camera = Camera::new(Viewport::Top, [10.0, 20.0], 128.0).unwrap();
+        let camera = OrthoCamera::new([10.0, 20.0], 128.0).unwrap();
         let layout = scene(vec![quad(10.0, 20.0, Fill::Solid)]).layout(&camera, 256, 256);
         assert_eq!(
             layout.rects[0],
@@ -331,7 +331,7 @@ mod tests {
             quad(500.0, 0.0, Fill::Solid),
             quad(0.0, -500.0, Fill::Solid),
         ])
-        .layout(&Camera::default(), 256, 256);
+        .layout(&OrthoCamera::default(), 256, 256);
         assert!(layout.rects.is_empty());
         assert_eq!(layout.off_screen, 2);
     }
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn edge_quads_are_clipped_not_dropped() {
         let layout =
-            scene(vec![quad(-128.0, 0.0, Fill::Solid)]).layout(&Camera::default(), 256, 256);
+            scene(vec![quad(-128.0, 0.0, Fill::Solid)]).layout(&OrthoCamera::default(), 256, 256);
         assert_eq!(layout.rects[0].x0, 0);
         assert_eq!(layout.rects[0].x1, 2);
         assert_eq!(layout.off_screen, 0);
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn tiny_quads_keep_one_pixel() {
-        let camera = Camera::new(Viewport::Top, [0.0, 0.0], 100_000.0).unwrap();
+        let camera = OrthoCamera::new([0.0, 0.0], 100_000.0).unwrap();
         let layout = scene(vec![quad(0.0, 0.0, Fill::Solid)]).layout(&camera, 256, 256);
         let rect = layout.rects[0];
         assert_eq!((rect.x1 - rect.x0, rect.y1 - rect.y0), (1, 1));
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn outline_is_four_one_pixel_edges() {
         let layout =
-            scene(vec![quad(0.0, 0.0, Fill::Outline)]).layout(&Camera::default(), 256, 256);
+            scene(vec![quad(0.0, 0.0, Fill::Outline)]).layout(&OrthoCamera::default(), 256, 256);
         assert_eq!(layout.rects.len(), 4);
         let area: u32 = layout
             .rects
@@ -378,7 +378,7 @@ mod tests {
             grid: Some(grid),
             quads: vec![],
         };
-        let layout = scene.layout(&Camera::default(), 256, 256);
+        let layout = scene.layout(&OrthoCamera::default(), 256, 256);
         assert_eq!(layout.rects.len(), 8 + 8);
         let axes: Vec<&PixelRect> = layout
             .rects
@@ -402,7 +402,7 @@ mod tests {
             grid: Some(grid),
             quads: vec![],
         };
-        let camera = Camera::new(Viewport::Top, [0.0, 0.0], 1024.0).unwrap();
+        let camera = OrthoCamera::new([0.0, 0.0], 1024.0).unwrap();
         assert!(scene.layout(&camera, 256, 256).rects.is_empty());
     }
 }

@@ -2,10 +2,11 @@ pub mod camera;
 pub mod compare;
 pub mod golden;
 pub mod image;
+pub mod math;
 pub mod renderer;
 pub mod scene;
 
-pub use camera::{Camera, Viewport};
+pub use camera::{Camera, OrthoCamera, PerspectiveCamera, Rotator, Viewport};
 pub use compare::{Comparison, Tolerance, compare};
 pub use image::Image;
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
