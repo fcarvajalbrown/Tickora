@@ -2,7 +2,9 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::{Map, Value, json};
 
+use crate::host::Host;
 use crate::jsonrpc::{self, METHOD_NOT_FOUND, Message, RpcError, UNSUPPORTED_PROTOCOL_VERSION};
+use crate::tools;
 
 pub const MODERN_VERSIONS: [&str; 1] = ["2026-07-28"];
 pub const LEGACY_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -13,14 +15,21 @@ pub const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 
 const INSTRUCTIONS: &str = "Tickora deterministic simulation. Step it with tickora_step, read state with tickora_list_components, tickora_query and tickora_get_entity, and compare runs with tickora_state_hash. The same seed and the same call sequence always give the same hashes.";
 
-#[derive(Default)]
-pub struct Server {
+pub struct Server<H> {
+    host: H,
     legacy_version: Option<&'static str>,
 }
 
-impl Server {
-    pub fn new() -> Self {
-        Self::default()
+impl<H: Host> Server<H> {
+    pub fn new(host: H) -> Self {
+        Self {
+            host,
+            legacy_version: None,
+        }
+    }
+
+    pub fn host(&self) -> &H {
+        &self.host
     }
 
     pub fn serve<R: BufRead, W: Write>(&mut self, mut reader: R, mut writer: W) -> io::Result<()> {
@@ -58,7 +67,7 @@ impl Server {
     fn request(&mut self, method: &str, params: &Map<String, Value>) -> Result<Value, RpcError> {
         let meta = params.get("_meta").and_then(Value::as_object);
         match meta.and_then(|meta| meta.get(META_PROTOCOL_VERSION)) {
-            Some(version) => self.modern(version, meta.unwrap_or(&Map::new()), method),
+            Some(version) => self.modern(version, meta.unwrap_or(&Map::new()), method, params),
             None => self.legacy(method, params),
         }
     }
@@ -68,6 +77,7 @@ impl Server {
         version: &Value,
         meta: &Map<String, Value>,
         method: &str,
+        params: &Map<String, Value>,
     ) -> Result<Value, RpcError> {
         let version = version.as_str().ok_or_else(|| {
             RpcError::invalid_params(format!("{META_PROTOCOL_VERSION} must be a string"))
@@ -90,6 +100,8 @@ impl Server {
                 "instructions": INSTRUCTIONS,
             }),
             "ping" => json!({}),
+            "tools/list" => json!({ "tools": tools::definitions(&self.host) }),
+            "tools/call" => tools::call(&mut self.host, params)?,
             _ => return Err(method_not_found(method)),
         };
         result["resultType"] = json!("complete");
@@ -120,6 +132,8 @@ impl Server {
             _ if self.legacy_version.is_none() => Err(RpcError::invalid_params(format!(
                 "missing {META_PROTOCOL_VERSION} in _meta; send it on every request or call initialize first"
             ))),
+            "tools/list" => Ok(json!({ "tools": tools::definitions(&self.host) })),
+            "tools/call" => tools::call(&mut self.host, params),
             _ => Err(method_not_found(method)),
         }
     }
@@ -146,10 +160,13 @@ fn unsupported_version(requested: &str) -> RpcError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::demo::ArenaHost;
 
     fn run(input: &str) -> Vec<Value> {
         let mut output = Vec::new();
-        Server::new().serve(input.as_bytes(), &mut output).unwrap();
+        Server::new(ArenaHost::new(0))
+            .serve(input.as_bytes(), &mut output)
+            .unwrap();
         String::from_utf8(output)
             .unwrap()
             .lines()
@@ -184,7 +201,7 @@ mod tests {
     #[test]
     fn invalid_utf8_is_a_parse_error_not_a_crash() {
         let mut output = Vec::new();
-        Server::new()
+        Server::new(ArenaHost::new(0))
             .serve(&b"\xff\xfe\n"[..], &mut output)
             .unwrap();
         let reply: Value = serde_json::from_slice(output.trim_ascii()).unwrap();
