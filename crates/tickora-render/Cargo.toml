@@ -1,0 +1,15 @@
+[package]
+name = "tickora-render"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+png = "0.18.1"
+pollster = "1.0.1"
+tickora-core = { version = "0.1.0", path = "../tickora-core" }
+wgpu = { version = "30.0.1", default-features = false, features = ["dx12", "vulkan", "wgsl", "std"] }
+
+[lints]
+workspace = true
