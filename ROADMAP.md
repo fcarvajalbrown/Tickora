@@ -24,7 +24,7 @@ Status: **In Progress**. ADRs 0002 and 0003.
 1. Done. GLB reader dependency, approved by Felipe: `gltf =1.4.1` (MIT OR Apache-2.0), default features off, only `utils` and `names`.
 2. In Progress. `perspective` viewport (Unreal `ELevelViewportType`) and an eye-height camera string. Camera, string and matrices done (render unit tests 34 to 42); the eye-height default waits on Felipe's number.
 3. Done. Depth buffer and mesh drawing: reversed-Z `Depth32Float`, `Scene3` instances from meshkit GLBs, `unlit` and `wireframe`; 6 render tests pass on RTX 2050 and WARP locally and in CI run 40599315260 (WARP, lavapipe).
-4. Not Started. Textures from the PSX bake.
+4. Done. Textures from the PSX bake: by material name, nearest and repeat, no mipmaps; a checker through `checker_maps` and `psx_bake` renders its exact texels on RTX 2050 and WARP locally and in CI run 40599885889 (WARP, lavapipe).
 5. Not Started. Point lights with distance falloff (lamp, generator).
 6. Not Started. Tolerance presets `low`, `medium`, `high`, measured against the CI software adapters.
 7. Not Started. 3D goldens in scenarios; the top view kept as a debug view.
