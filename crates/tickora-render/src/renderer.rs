@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::mpsc;
+use std::sync::{Mutex, MutexGuard, mpsc};
 
 use wgpu::util::DeviceExt;
 
@@ -160,6 +160,7 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     mesh: MeshPipelines,
     info: AdapterInfo,
+    one_frame_at_a_time: Mutex<()>,
 }
 
 impl Renderer {
@@ -199,6 +200,7 @@ impl Renderer {
             pipeline,
             mesh,
             info,
+            one_frame_at_a_time: Mutex::new(()),
         })
     }
 
@@ -214,6 +216,7 @@ impl Renderer {
         height: u32,
     ) -> Result<(Image, Layout), String> {
         check_size(width, height)?;
+        let _frame = self.lock_frame();
         let layout = scene.layout(camera, width, height);
         let vertices = vertex_bytes(&layout.rects, width, height);
         let vertex_buffer = (!vertices.is_empty()).then(|| {
@@ -243,6 +246,7 @@ impl Renderer {
         height: u32,
     ) -> Result<(Image, usize), String> {
         check_size(width, height)?;
+        let _frame = self.lock_frame();
         let (batches, pipeline) = match view_mode {
             ViewMode::Lit => (scene.triangles(), &self.mesh.lit),
             ViewMode::Unlit => (scene.triangles(), &self.mesh.triangles),
@@ -297,6 +301,12 @@ impl Renderer {
             }
         })?;
         Ok((image, scene.off_screen(camera, width, height)))
+    }
+
+    fn lock_frame(&self) -> MutexGuard<'_, ()> {
+        self.one_frame_at_a_time
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn texture_group(&self, image: &Image) -> wgpu::BindGroup {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tickora_render::{
     AdapterChoice, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Renderer, Rotator,
@@ -13,9 +13,12 @@ const RED: [u8; 4] = [255, 0, 0, 255];
 const WIDTH: u32 = 200;
 const HEIGHT: u32 = 100;
 
-fn renderer() -> Renderer {
-    let choice = AdapterChoice::from_env().unwrap();
-    Renderer::new(choice).unwrap_or_else(|e| panic!("no adapter for render tests: {e}"))
+fn renderer() -> &'static Renderer {
+    static RENDERER: OnceLock<Renderer> = OnceLock::new();
+    RENDERER.get_or_init(|| {
+        let choice = AdapterChoice::from_env().unwrap();
+        Renderer::new(choice).unwrap_or_else(|e| panic!("no adapter for render tests: {e}"))
+    })
 }
 
 fn cube() -> Arc<Mesh> {

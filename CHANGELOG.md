@@ -11,6 +11,7 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - Depth buffer (`Depth32Float`, reversed Z) and mesh drawing: `Scene3` of mesh instances with location, rotation, scale and colour override, drawn per material in `unlit` or `wireframe` (triangle edges as a line list), with `off_screen` counted against the view frustum.
 - Textures by material name from `psx_bake` output, uploaded without mipmaps and sampled nearest-neighbour with repeat; the texel multiplies the material colour. RGB PNGs now read as opaque RGBA.
 - `lit` view mode with up to 16 point lights after `UPointLightComponent`: diffuse Lambert plus ambient, distance falloff from Karis 2013 equation (9) with distance in metres, attenuation radius as the window. `lit` on the `top` viewport is an error.
+- `Renderer` draws one frame at a time behind a lock, so it can be shared across threads. Many WARP devices rendering in parallel crashed with an access violation (21 of 25 runs), and one device shared without the lock hung; the 3D render tests now share one renderer.
 - `tools/checker_maps`: checker test patterns written as ambientCG-style colour maps for `psx_bake`; 3 tool tests.
 - `specs/render_fixtures/` and its meshes under `assets/gen/render_fixtures/`, built with `interior_kit` and passing `mesh_gate`.
 
