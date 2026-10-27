@@ -2,6 +2,10 @@
 
 Read `PRD.md` first.
 
+## Unreal Engine as the model
+
+- Hard rule: copy from Unreal Engine anything that can be transported and does not collide with the PRD's original mission. When a feature has an Unreal counterpart (camera, viewports, screenshots, automation tests, naming), start from how Unreal does it.
+
 ## Binary research
 
 - `research-private/` is git-ignored and never committed, pushed or published. It holds engine executables and DLLs copied from games Felipe owns, never game assets, plus notes and analysis output.
