@@ -1,5 +1,7 @@
-use serde_json::{Map, Value};
-use tickora_core::ecs::Entity;
+use serde_json::{Map, Value, json};
+use tickora_core::ecs::{Entity, FieldValue};
+
+use crate::host::Host;
 
 pub const MAX_RUN_TICKS: u64 = 1_000_000;
 
@@ -369,10 +371,216 @@ fn join(path: &str, key: &str) -> String {
     format!("{path}.{key}")
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Outcome {
+    pub index: usize,
+    pub at: u64,
+    pub passed: bool,
+    pub check: Value,
+    pub actual: Value,
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Report {
+    pub name: Option<String>,
+    pub passed: bool,
+    pub ticks_run: u64,
+    pub state_hash: u64,
+    pub replay_hash: u64,
+    pub outcomes: Vec<Outcome>,
+}
+
+impl Report {
+    pub fn failures(&self) -> impl Iterator<Item = &Outcome> {
+        self.outcomes.iter().filter(|outcome| !outcome.passed)
+    }
+
+    pub fn to_json(&self) -> Value {
+        let results: Vec<Value> = self
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                let mut result = json!({
+                    "index": outcome.index,
+                    "at": outcome.at,
+                    "passed": outcome.passed,
+                    "check": outcome.check,
+                    "actual": outcome.actual,
+                });
+                if let Some(message) = &outcome.message {
+                    result["message"] = json!(message);
+                }
+                result
+            })
+            .collect();
+        json!({
+            "name": self.name,
+            "passed": self.passed,
+            "ticks_run": self.ticks_run,
+            "state_hash": self.state_hash.to_string(),
+            "replay_hash": self.replay_hash.to_string(),
+            "failed": self.failures().count(),
+            "results": results,
+        })
+    }
+}
+
+pub fn run<H: Host>(host: &mut H, scenario: &Scenario) -> Result<Report, String> {
+    host.reset(scenario.seed);
+    let mut order: Vec<usize> = (0..scenario.expect.len()).collect();
+    order.sort_by_key(|&index| scenario.expect[index].at);
+    let mut pending = order.into_iter().peekable();
+    let mut batches = scenario.inputs.iter().peekable();
+    let mut outcomes = Vec::with_capacity(scenario.expect.len());
+    loop {
+        let tick = host.tick();
+        while let Some(index) = pending.next_if(|&index| scenario.expect[index].at == tick) {
+            let assertion = &scenario.expect[index];
+            let (passed, actual, message) = evaluate(host, &assertion.check);
+            outcomes.push(Outcome {
+                index,
+                at: tick,
+                passed,
+                check: assertion.source.clone(),
+                actual,
+                message,
+            });
+        }
+        if tick >= scenario.run_to {
+            break;
+        }
+        let inputs = batches
+            .next_if(|batch| batch.at == tick)
+            .map_or(&[][..], |batch| &batch.inputs[..]);
+        host.step(inputs)
+            .map_err(|e| format!("inputs at {tick}: {e}"))?;
+    }
+    outcomes.sort_by_key(|outcome| outcome.index);
+    Ok(Report {
+        name: scenario.name.clone(),
+        passed: outcomes.iter().all(|outcome| outcome.passed),
+        ticks_run: host.tick(),
+        state_hash: host.state_hash(),
+        replay_hash: host.replay_hash(),
+        outcomes,
+    })
+}
+
+fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
+    let world = host.world();
+    let count = |range: &Range, count: usize| {
+        let count = i64::try_from(count).unwrap_or(i64::MAX);
+        (range.contains(count), json!(count), None)
+    };
+    let failed = |message: String| (false, Value::Null, Some(message));
+    match check {
+        Check::StateHash(expected) => hash(host.state_hash(), *expected),
+        Check::ReplayHash(expected) => hash(host.replay_hash(), *expected),
+        Check::Entities(range) => count(range, world.entity_count()),
+        Check::Component { name, count: range } => match world.component_count(name) {
+            Some(found) => count(range, found),
+            None => failed(format!("unknown component {name:?}")),
+        },
+        Check::Query {
+            names,
+            count: range,
+        } => {
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            match world.query_names(&names) {
+                Ok(matches) => count(range, matches.len()),
+                Err(e) => failed(e.to_string()),
+            }
+        }
+        Check::Field {
+            entity,
+            component,
+            field,
+            value,
+        } => {
+            let Some(components) = world.describe(*entity) else {
+                return failed(format!(
+                    "entity {}v{} is not alive",
+                    entity.index(),
+                    entity.generation()
+                ));
+            };
+            let Some((_, fields)) = components.into_iter().find(|(name, _)| name == component)
+            else {
+                return failed(format!(
+                    "entity {}v{} has no component {component:?}",
+                    entity.index(),
+                    entity.generation()
+                ));
+            };
+            let Some((_, found)) = fields.into_iter().find(|(name, _)| name == field) else {
+                return failed(format!("component {component:?} has no field {field:?}"));
+            };
+            compare(&found, value)
+        }
+    }
+}
+
+fn hash(actual: u64, expected: u64) -> (bool, Value, Option<String>) {
+    (actual == expected, json!(actual.to_string()), None)
+}
+
+fn compare(found: &FieldValue, expected: &Expected) -> (bool, Value, Option<String>) {
+    let actual = actual_json(found);
+    let passed = match (found, expected) {
+        (FieldValue::Int(number), Expected::Int(range)) => range.contains(*number),
+        (FieldValue::Bool(flag), Expected::Literal(Value::Bool(want))) => flag == want,
+        (FieldValue::Text(text), Expected::Literal(Value::String(want))) => text == want,
+        (FieldValue::Fx(fixed), Expected::Raw(range)) => range.contains(fixed.raw()),
+        (FieldValue::Fx(fixed), Expected::Approx { target, tol }) => {
+            (fixed.to_f64() - target).abs() <= *tol
+        }
+        _ => {
+            let message = format!(
+                "a {} field cannot be compared with {}",
+                kind(found),
+                comparison(expected)
+            );
+            return (false, actual, Some(message));
+        }
+    };
+    (passed, actual, None)
+}
+
+fn actual_json(value: &FieldValue) -> Value {
+    match value {
+        FieldValue::Int(number) => json!(number),
+        FieldValue::Bool(flag) => json!(flag),
+        FieldValue::Fx(fixed) => {
+            json!({ "raw": fixed.raw().to_string(), "approx": fixed.to_f64() })
+        }
+        FieldValue::Text(text) => json!(text),
+    }
+}
+
+fn kind(value: &FieldValue) -> &'static str {
+    match value {
+        FieldValue::Int(_) => "int",
+        FieldValue::Bool(_) => "bool",
+        FieldValue::Fx(_) => "fx",
+        FieldValue::Text(_) => "text",
+    }
+}
+
+fn comparison(expected: &Expected) -> &'static str {
+    match expected {
+        Expected::Int(_) => "an integer eq, min or max; use raw or approx for fx",
+        Expected::Literal(Value::Bool(_)) => "a bool eq",
+        Expected::Literal(_) => "a text eq",
+        Expected::Raw(_) => "raw, which is for fx fields",
+        Expected::Approx { .. } => "approx, which is for fx fields",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use crate::demo::ArenaHost;
 
     fn minimal(expect: Value) -> Value {
         json!({ "seed": 7, "run_to": 10, "expect": [expect] })
@@ -529,5 +737,131 @@ mod tests {
             max: None,
         };
         assert!(open.contains(i64::MIN));
+    }
+
+    const SPAWN_TWO_THEN_DAMAGE: [(u64, &str); 2] = [
+        (0, r#"[{ "type": "spawn" }, { "type": "spawn" }]"#),
+        (1, r#"[{ "type": "damage", "amount": 5 }]"#),
+    ];
+
+    fn arena(run_to: u64, expect: Value) -> Scenario {
+        let inputs: Vec<Value> = SPAWN_TWO_THEN_DAMAGE
+            .iter()
+            .map(|(at, inputs)| {
+                json!({ "at": at, "inputs": serde_json::from_str::<Value>(inputs).unwrap() })
+            })
+            .collect();
+        from_json(&json!({ "seed": 3, "inputs": inputs, "run_to": run_to, "expect": expect }))
+            .unwrap()
+    }
+
+    fn stepped_by_hand(ticks: u64) -> ArenaHost {
+        let mut host = ArenaHost::new(3);
+        for tick in 0..ticks {
+            let inputs: Vec<Value> = SPAWN_TWO_THEN_DAMAGE
+                .iter()
+                .find(|(at, _)| *at == tick)
+                .map(|(_, inputs)| serde_json::from_str(inputs).unwrap())
+                .unwrap_or_default();
+            host.step(&inputs).unwrap();
+        }
+        host
+    }
+
+    fn field(at: u64, index: u32, target: &str, value: Value) -> Value {
+        json!({ "at": at, "entity": { "index": index, "generation": 0 }, "field": target, "value": value })
+    }
+
+    #[test]
+    fn every_check_kind_passes_against_the_arena() {
+        let reference = stepped_by_hand(20);
+        let x = reference
+            .world()
+            .get::<crate::demo::Position>(Entity::new(1, 0))
+            .unwrap()
+            .x;
+        let scenario = arena(
+            20,
+            json!([
+                { "at": 0, "entities": { "eq": 0 } },
+                { "at": 1, "entities": { "eq": 2 } },
+                { "at": 1, "component": "health", "count": { "eq": 2 } },
+                { "at": 1, "query": ["position", "velocity"], "count": { "eq": 2 } },
+                field(1, 0, "health.hp", json!({ "eq": 100 })),
+                field(2, 1, "health.hp", json!({ "eq": 95 })),
+                field(20, 1, "position.x", json!({ "raw": x.raw().to_string() })),
+                field(20, 1, "position.x", json!({ "approx": x.to_f64(), "tol": 1e-9 })),
+                { "at": 20, "state_hash": reference.state_hash().to_string() },
+                { "at": 20, "replay_hash": reference.replay_hash().to_string() },
+            ]),
+        );
+        let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
+        assert!(report.passed, "{}", report.to_json());
+        assert_eq!(report.ticks_run, 20);
+        assert_eq!(report.state_hash, reference.state_hash());
+        assert_eq!(report.outcomes.len(), 10);
+    }
+
+    #[test]
+    fn failures_are_reported_without_stopping_the_run() {
+        let scenario = arena(
+            20,
+            json!([
+                { "at": 20, "state_hash": "1" },
+                field(5, 9, "health.hp", json!({ "eq": 1 })),
+                { "at": 5, "component": "mana", "count": { "eq": 0 } },
+                field(5, 0, "health.hp", json!({ "raw": "100" })),
+                field(5, 0, "health.mana", json!({ "eq": 1 })),
+                { "at": 20, "entities": { "eq": 2 } },
+            ]),
+        );
+        let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.failures().count(), 5);
+        assert!(report.outcomes[5].passed);
+        let messages: Vec<String> = report
+            .outcomes
+            .iter()
+            .map(|outcome| outcome.message.clone().unwrap_or_default())
+            .collect();
+        assert_eq!(messages[0], "");
+        assert!(messages[1].contains("not alive"));
+        assert!(messages[2].contains("unknown component"));
+        assert!(messages[3].contains("int field cannot be compared with raw"));
+        assert!(messages[4].contains("no field \"mana\""));
+        assert_eq!(report.outcomes[3].actual, json!(100));
+        let report = report.to_json();
+        assert_eq!(report["failed"], 5);
+        assert_eq!(report["results"][0]["check"]["state_hash"], "1");
+        assert!(report["results"][5].get("message").is_none());
+    }
+
+    #[test]
+    fn outcomes_follow_file_order_whatever_the_ticks() {
+        let scenario = arena(
+            5,
+            json!([
+                { "at": 5, "entities": { "eq": 2 } },
+                { "at": 0, "entities": { "eq": 0 } },
+            ]),
+        );
+        let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
+        let ticks: Vec<(usize, u64)> = report.outcomes.iter().map(|o| (o.index, o.at)).collect();
+        assert_eq!(ticks, [(0, 5), (1, 0)]);
+        assert!(report.passed);
+    }
+
+    #[test]
+    fn inputs_the_host_rejects_are_a_scenario_error() {
+        let scenario = from_json(&json!({
+            "seed": 0,
+            "inputs": [{ "at": 2, "inputs": [{ "type": "fly" }] }],
+            "run_to": 3,
+            "expect": [{ "at": 3, "entities": { "eq": 0 } }],
+        }))
+        .unwrap();
+        let error = run(&mut ArenaHost::new(0), &scenario).unwrap_err();
+        assert!(error.starts_with("inputs at 2:"), "{error}");
+        assert!(error.contains("unknown input type"));
     }
 }
