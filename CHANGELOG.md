@@ -15,6 +15,7 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - CC0 texture fetchers for ambientCG, Poly Haven and Texture.ninja, `fetch_missing` and `fetch_cc0`, with a `--manifest` option that writes the SHA-256 record under `specs/`.
 - CC0 sound search across BigSoundBank, Freesound CC0, the Red Library, Wikimedia Commons and OpenGameArt, per-source fetchers with manifests under `specs/audio/`, and `find_blows` for cutting single impacts.
 - `meshkit` and `interior_kit`: seeded GLB pieces from JSON specs and a `layout.csv` in Unreal's convention; mesh checks `check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check` and `canonical_glb`.
+- `psx_bake` (CC0 maps to PSX-size albedo with occlusion and height shading) and `contact_sheet`.
 
 ### Changed
 
