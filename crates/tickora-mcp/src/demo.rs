@@ -213,6 +213,10 @@ impl Host for ArenaHost {
         })
     }
 
+    fn fresh(&self, seed: u64) -> Self {
+        ArenaHost::new(seed)
+    }
+
     fn reset(&mut self, seed: u64) {
         *self = ArenaHost::new(seed);
     }

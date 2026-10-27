@@ -228,7 +228,7 @@ fn reset_returns_to_a_fresh_run() {
 }
 
 #[test]
-fn tools_list_exposes_the_six_tools_with_object_schemas() {
+fn tools_list_exposes_the_seven_tools_with_object_schemas() {
     let mut script = Script::new(Era::Modern);
     script.request("tools/list", json!({}));
     let replies = script.run(0);
@@ -245,6 +245,7 @@ fn tools_list_exposes_the_six_tools_with_object_schemas() {
             "tickora_query",
             "tickora_get_entity",
             "tickora_reset",
+            "tickora_run_scenario",
         ]
     );
     for tool in tools {
@@ -310,4 +311,48 @@ fn entity_and_component_lookups_report_misses_as_tool_errors() {
         json!({ "name": "position", "count": 1 })
     );
     assert_eq!(replies[7]["error"]["code"], INVALID_PARAMS);
+}
+
+#[test]
+fn a_scenario_runs_on_a_fresh_sim_and_leaves_the_live_one_alone() {
+    let scenario = json!({
+        "seed": 5,
+        "inputs": [{ "at": 0, "inputs": [{ "type": "spawn" }] }],
+        "run_to": 4,
+        "expect": [
+            { "at": 4, "entities": { "eq": 1 } },
+            { "at": 4, "state_hash": "1" },
+        ],
+    });
+    let mut script = Script::new(Era::Modern);
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 3, "inputs": [{ "type": "spawn" }, { "type": "spawn" }] }),
+    );
+    script.call("tickora_run_scenario", json!({ "scenario": scenario }));
+    script.call("tickora_state_hash", json!({}));
+    script.call("tickora_run_scenario", json!({ "scenario": { "seed": 5 } }));
+    script.call(
+        "tickora_run_scenario",
+        json!({ "path": "a.json", "scenario": scenario }),
+    );
+    script.call("tickora_run_scenario", json!({}));
+    script.call(
+        "tickora_run_scenario",
+        json!({ "path": "no/such/scenario.json" }),
+    );
+    let replies = script.run(9);
+
+    let report = structured(&replies[2]);
+    assert_eq!(report["passed"], false);
+    assert_eq!(report["failed"], 1);
+    assert_eq!(report["ticks_run"], 4);
+    assert_eq!(report["results"][0]["passed"], true);
+    assert_eq!(report["results"][1]["passed"], false);
+    assert_eq!(structured(&replies[3]), structured(&replies[1]));
+    for reply in &replies[4..8] {
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+    }
+    let missing = replies[7]["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(missing.contains("cannot read file"), "{missing}");
 }

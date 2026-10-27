@@ -1,9 +1,12 @@
+use std::path::Path;
+
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tickora_core::ecs::{Entity, FieldValue};
 
 use crate::host::Host;
 use crate::jsonrpc::RpcError;
+use crate::scenario;
 
 pub const MAX_STEP_TICKS: u64 = 100_000;
 pub const DEFAULT_QUERY_LIMIT: u64 = 100;
@@ -59,6 +62,15 @@ pub fn definitions<H: Host>(host: &H) -> Value {
             json!({ "seed": seed }),
             &[],
         ),
+        tool(
+            "tickora_run_scenario",
+            "Run a scenario on a fresh simulation, leaving the live one untouched, and report every assertion. Give exactly one of path (a JSON scenario file, relative to the server's working directory) or scenario (the same object inline). A scenario has seed, optional inputs as [{at, inputs}] applied in the step from tick at to at + 1, run_to, and expect: a list of {at} plus one check, which is state_hash or replay_hash (decimal string), entities (count), component with count, query (component names) with count, or entity {index, generation} with field \"component.field\" and value. Counts and int values take {eq} or {min, max}; bool and text take {eq}; fx takes {raw} (Q32.32 decimal string), {raw_min, raw_max} or {approx, tol}. A failed assertion returns passed false, not a tool error.",
+            json!({
+                "path": { "type": "string" },
+                "scenario": { "type": "object" },
+            }),
+            &[],
+        ),
     ])
 }
 
@@ -80,6 +92,7 @@ pub fn call<H: Host>(host: &mut H, params: &Map<String, Value>) -> Result<Value,
         "tickora_query" => query(host, args),
         "tickora_get_entity" => get_entity(host, args),
         "tickora_reset" => reset(host, args),
+        "tickora_run_scenario" => run_scenario(host, args),
         _ => return Err(RpcError::invalid_params(format!("unknown tool {name}"))),
     };
     Ok(match outcome {
@@ -214,6 +227,18 @@ fn reset<H: Host>(host: &mut H, args: &Args) -> Result<Value, String> {
     };
     host.reset(seed);
     Ok(hashes(host))
+}
+
+fn run_scenario<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
+    only(args, &["path", "scenario"])?;
+    let parsed = match (args.get("path"), args.get("scenario")) {
+        (Some(Value::String(path)), None) => scenario::load(Path::new(path)),
+        (Some(_), None) => Err("argument \"path\" must be a string".to_string()),
+        (None, Some(inline)) => scenario::from_json(inline),
+        _ => Err("give exactly one of \"path\" or \"scenario\"".to_string()),
+    }?;
+    let mut fresh = host.fresh(parsed.seed);
+    scenario::run(&mut fresh, &parsed).map(|report| report.to_json())
 }
 
 fn entity_json(entity: Entity) -> Value {
