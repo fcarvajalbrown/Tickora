@@ -12,8 +12,35 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      TICKORA_ADAPTER: software
     steps:
       - uses: actions/checkout@v4
+      - name: Install Mesa lavapipe
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          MESA_VERSION: 26.1.3
+          CI_BINARY_BUILD: build29
+        run: |
+          set -e
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq libvulkan1
+          curl -L --retry 5 -o mesa.tar.xz "https://github.com/gfx-rs/ci-build/releases/download/$CI_BINARY_BUILD/mesa-$MESA_VERSION-linux-x86_64.tar.xz"
+          mkdir mesa
+          tar xpf mesa.tar.xz -C mesa
+          cat > icd.json <<EOF
+          {
+            "ICD": {
+              "api_version": "1.4.348",
+              "library_arch": "64",
+              "library_path": "$PWD/mesa/lib/x86_64-linux-gnu/libvulkan_lvp.so"
+            },
+            "file_format_version": "1.0.1"
+          }
+          EOF
+          echo "VK_DRIVER_FILES=$PWD/icd.json" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$PWD/mesa/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
