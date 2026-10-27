@@ -1,21 +1,32 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use tickora_core::ecs::{Entity, FieldValue};
+use tickora_render::Tolerance;
+use tickora_render::golden;
 
 use crate::host::Host;
+use crate::shot::{self, Shot};
 
 pub const MAX_RUN_TICKS: u64 = 1_000_000;
 
-const CHECK_KEYS: [&str; 6] = [
+const CHECK_KEYS: [&str; 7] = [
     "state_hash",
     "replay_hash",
     "entities",
     "component",
     "query",
     "entity",
+    "screenshot",
 ];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Record {
+    Off,
+    Replace,
+    Alternative,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scenario {
@@ -24,6 +35,7 @@ pub struct Scenario {
     pub inputs: Vec<Batch>,
     pub run_to: u64,
     pub expect: Vec<Assertion>,
+    pub base_dir: PathBuf,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -58,6 +70,11 @@ pub enum Check {
         field: String,
         value: Expected,
     },
+    Screenshot {
+        golden: String,
+        shot: Shot,
+        tolerance: Tolerance,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,7 +99,11 @@ pub enum Expected {
 
 pub fn load(path: &Path) -> Result<Scenario, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("cannot read file: {e}"))?;
-    parse(&text)
+    let mut scenario = parse(&text)?;
+    if let Some(parent) = path.parent() {
+        scenario.base_dir = parent.to_path_buf();
+    }
+    Ok(scenario)
 }
 
 pub fn parse(text: &str) -> Result<Scenario, String> {
@@ -146,6 +167,7 @@ pub fn from_json(value: &Value) -> Result<Scenario, String> {
         inputs,
         run_to,
         expect,
+        base_dir: PathBuf::new(),
     })
 }
 
@@ -206,6 +228,26 @@ fn parse_assertion(value: &Value, path: &str) -> Result<Assertion, String> {
                 count: range(get("count")?, &at_path("count"))?,
             }
         }
+        "screenshot" => {
+            let mut allowed = vec!["at", "screenshot", "tolerance"];
+            allowed.extend(shot::SHOT_KEYS);
+            only(entry, path, &allowed)?;
+            let golden = string(get("screenshot")?, &at_path("screenshot"))?;
+            if golden.is_empty() {
+                return Err(format!(
+                    "{}: must name a golden folder",
+                    at_path("screenshot")
+                ));
+            }
+            Check::Screenshot {
+                golden,
+                shot: shot::from_args(entry).map_err(|e| format!("{path}: {e}"))?,
+                tolerance: match entry.get("tolerance") {
+                    None => Tolerance::ZERO,
+                    Some(value) => tolerance(value, &at_path("tolerance"))?,
+                },
+            }
+        }
         _ => {
             only(entry, path, &["at", "entity", "field", "value"])?;
             let field_path = at_path("field");
@@ -226,6 +268,53 @@ fn parse_assertion(value: &Value, path: &str) -> Result<Assertion, String> {
         at,
         check,
         source: value.clone(),
+    })
+}
+
+fn tolerance(value: &Value, path: &str) -> Result<Tolerance, String> {
+    if let Value::String(name) = value {
+        return Tolerance::preset(name).map_err(|e| format!("{path}: {e}"));
+    }
+    let map = object(value, path)?;
+    only(
+        map,
+        path,
+        &[
+            "red",
+            "green",
+            "blue",
+            "alpha",
+            "max_local_error",
+            "max_global_error",
+            "ignore_aa",
+        ],
+    )?;
+    let channel = |key: &str| match map.get(key) {
+        None => Ok(0),
+        Some(value) => value
+            .as_u64()
+            .and_then(|n| u8::try_from(n).ok())
+            .ok_or_else(|| format!("{}: must be from 0 to 255", join(path, key))),
+    };
+    let share = |key: &str| match map.get(key) {
+        None => Ok(0.0),
+        Some(value) => value
+            .as_f64()
+            .filter(|share| (0.0..=1.0).contains(share))
+            .ok_or_else(|| format!("{}: must be from 0 to 1", join(path, key))),
+    };
+    Ok(Tolerance {
+        red: channel("red")?,
+        green: channel("green")?,
+        blue: channel("blue")?,
+        alpha: channel("alpha")?,
+        max_local_error: share("max_local_error")?,
+        max_global_error: share("max_global_error")?,
+        ignore_aa: match map.get("ignore_aa") {
+            None => true,
+            Some(Value::Bool(flag)) => *flag,
+            Some(_) => return Err(format!("{}: must be a boolean", join(path, "ignore_aa"))),
+        },
     })
 }
 
@@ -435,6 +524,14 @@ impl Report {
 }
 
 pub fn run<H: Host>(host: &mut H, scenario: &Scenario) -> Result<Report, String> {
+    run_recording(host, scenario, Record::Off)
+}
+
+pub fn run_recording<H: Host>(
+    host: &mut H,
+    scenario: &Scenario,
+    record: Record,
+) -> Result<Report, String> {
     host.reset(scenario.seed);
     let mut order: Vec<usize> = (0..scenario.expect.len()).collect();
     order.sort_by_key(|&index| scenario.expect[index].at);
@@ -445,7 +542,21 @@ pub fn run<H: Host>(host: &mut H, scenario: &Scenario) -> Result<Report, String>
         let tick = host.tick();
         while let Some(index) = pending.next_if(|&index| scenario.expect[index].at == tick) {
             let assertion = &scenario.expect[index];
-            let (passed, actual, message) = evaluate(host, &assertion.check);
+            let (passed, actual, message) = match &assertion.check {
+                Check::Screenshot {
+                    golden,
+                    shot,
+                    tolerance,
+                } => screenshot(
+                    host,
+                    &scenario.base_dir.join(golden),
+                    shot,
+                    tolerance,
+                    record,
+                )
+                .map_err(|e| format!("expect[{index}] at {tick}: {e}"))?,
+                check => evaluate(host, check),
+            };
             outcomes.push(Outcome {
                 index,
                 at: tick,
@@ -485,6 +596,7 @@ fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
     match check {
         Check::StateHash(expected) => hash(host.state_hash(), *expected),
         Check::ReplayHash(expected) => hash(host.replay_hash(), *expected),
+        Check::Screenshot { .. } => failed("a screenshot needs the renderer".to_string()),
         Check::Entities(range) => count(range, world.entity_count()),
         Check::Component { name, count: range } => match world.component_count(name) {
             Some(found) => count(range, found),
@@ -527,6 +639,68 @@ fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
             compare(&found, value)
         }
     }
+}
+
+fn screenshot<H: Host>(
+    host: &H,
+    dir: &Path,
+    shot: &Shot,
+    tolerance: &Tolerance,
+    record: Record,
+) -> Result<(bool, Value, Option<String>), String> {
+    let capture = shot::capture(host, shot)?;
+    let pixel_hash = capture.image.pixel_hash().to_string();
+    let recorded = match record {
+        Record::Off => None,
+        Record::Replace => Some(golden::record(&capture.image, dir, &capture.bucket)?),
+        Record::Alternative => Some(golden::record_alternative(
+            &capture.image,
+            dir,
+            &capture.bucket,
+        )?),
+    };
+    if let Some(path) = recorded {
+        let actual = json!({
+            "recorded": path.display().to_string(),
+            "bucket": capture.bucket,
+            "pixel_hash": pixel_hash,
+        });
+        return Ok((true, actual, None));
+    }
+    let outcome = golden::check(&capture.image, dir, &capture.bucket, tolerance)?;
+    Ok(match outcome {
+        golden::Outcome::Missing { expected } => (
+            false,
+            json!({ "bucket": capture.bucket, "pixel_hash": pixel_hash }),
+            Some(format!(
+                "no golden for bucket {} at {}; record it with tickora-mcp scenario --record",
+                capture.bucket,
+                expected.display()
+            )),
+        ),
+        golden::Outcome::Compared { golden, comparison } => {
+            let message = (!comparison.passed).then(|| {
+                format!(
+                    "differs from {}: {} pixels, global error {}, max local error {}, max channel delta {}",
+                    golden.display(),
+                    comparison.differing_pixels,
+                    comparison.global_error,
+                    comparison.max_local_error,
+                    comparison.max_channel_delta
+                )
+            });
+            let actual = json!({
+                "golden": golden.display().to_string(),
+                "bucket": capture.bucket,
+                "pixel_hash": pixel_hash,
+                "differing_pixels": comparison.differing_pixels,
+                "global_error": comparison.global_error,
+                "max_local_error": comparison.max_local_error,
+                "max_channel_delta": comparison.max_channel_delta,
+            });
+            (comparison.passed, actual, message)
+        }
+    })
 }
 
 fn hash(actual: u64, expected: u64) -> (bool, Value, Option<String>) {

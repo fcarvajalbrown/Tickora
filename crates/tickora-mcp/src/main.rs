@@ -6,9 +6,10 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 use tickora_mcp::Server;
 use tickora_mcp::demo::ArenaHost;
-use tickora_mcp::scenario::{self, Report};
+use tickora_mcp::scenario::{self, Record, Report};
 
-const USAGE: &str = "usage: tickora-mcp [scenario [--json] <file>...]";
+const USAGE: &str =
+    "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] <file>...]";
 const MALFORMED: u8 = 2;
 
 fn main() -> ExitCode {
@@ -34,8 +35,29 @@ fn serve() -> ExitCode {
 }
 
 fn scenarios(args: &[String]) -> ExitCode {
-    let as_json = args.iter().any(|arg| arg == "--json");
-    let files: Vec<&String> = args.iter().filter(|arg| *arg != "--json").collect();
+    let flags = ["--json", "--record", "--record-alternative"];
+    let has = |flag: &str| args.iter().any(|arg| arg == flag);
+    let as_json = has("--json");
+    let record = match (has("--record"), has("--record-alternative")) {
+        (false, false) => Record::Off,
+        (true, false) => Record::Replace,
+        (false, true) => Record::Alternative,
+        (true, true) => {
+            eprintln!("--record and --record-alternative cannot be combined; {USAGE}");
+            return ExitCode::from(MALFORMED);
+        }
+    };
+    if let Some(unknown) = args
+        .iter()
+        .find(|arg| arg.starts_with("--") && !flags.contains(&arg.as_str()))
+    {
+        eprintln!("unknown option {unknown:?}; {USAGE}");
+        return ExitCode::from(MALFORMED);
+    }
+    let files: Vec<&String> = args
+        .iter()
+        .filter(|arg| !flags.contains(&arg.as_str()))
+        .collect();
     if files.is_empty() {
         eprintln!("no scenario files given; {USAGE}");
         return ExitCode::from(MALFORMED);
@@ -43,8 +65,9 @@ fn scenarios(args: &[String]) -> ExitCode {
     let mut worst = 0;
     let mut reports = Vec::new();
     for file in files {
-        let outcome = scenario::load(Path::new(file))
-            .and_then(|scenario| scenario::run(&mut ArenaHost::new(0), &scenario));
+        let outcome = scenario::load(Path::new(file)).and_then(|scenario| {
+            scenario::run_recording(&mut ArenaHost::new(0), &scenario, record)
+        });
         let code = match &outcome {
             Ok(report) if report.passed => 0,
             Ok(_) => 1,
@@ -70,6 +93,11 @@ fn scenarios(args: &[String]) -> ExitCode {
 }
 
 fn print_report(file: &str, report: &Report) {
+    for outcome in &report.outcomes {
+        if let Some(path) = outcome.actual.get("recorded").and_then(Value::as_str) {
+            println!("RECORDED {path}");
+        }
+    }
     let total = report.outcomes.len();
     let failed = report.failures().count();
     if failed == 0 {
