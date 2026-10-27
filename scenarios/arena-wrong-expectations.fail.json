@@ -1,0 +1,13 @@
+{
+  "name": "arena: deliberately wrong expectations, must fail",
+  "seed": "12648430",
+  "inputs": [
+    { "at": 0, "inputs": [{ "type": "spawn" }] }
+  ],
+  "run_to": 10,
+  "expect": [
+    { "at": 10, "entities": { "eq": 1 } },
+    { "at": 10, "entity": { "index": 0, "generation": 0 }, "field": "health.hp", "value": { "eq": 99 } },
+    { "at": 10, "state_hash": "1" }
+  ]
+}

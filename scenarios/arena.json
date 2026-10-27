@@ -1,0 +1,30 @@
+{
+  "name": "arena: spawns, damage and a despawn over 600 ticks",
+  "seed": "12648430",
+  "inputs": [
+    { "at": 0, "inputs": [{ "type": "spawn" }, { "type": "spawn" }, { "type": "spawn" }] },
+    { "at": 5, "inputs": [{ "type": "damage", "amount": 7 }] },
+    { "at": 30, "inputs": [{ "type": "spawn" }] },
+    { "at": 50, "inputs": [{ "type": "damage", "amount": 61 }, { "type": "damage", "amount": 59 }] },
+    { "at": 60, "inputs": [{ "type": "damage", "amount": 59 }] }
+  ],
+  "run_to": 600,
+  "expect": [
+    { "at": 0, "entities": { "eq": 0 } },
+    { "at": 1, "entities": { "eq": 3 } },
+    { "at": 1, "component": "health", "count": { "eq": 3 } },
+    { "at": 1, "query": ["position", "velocity"], "count": { "eq": 3 } },
+    { "at": 6, "entity": { "index": 0, "generation": 0 }, "field": "health.hp", "value": { "eq": 100 } },
+    { "at": 6, "entity": { "index": 1, "generation": 0 }, "field": "health.hp", "value": { "eq": 93 } },
+    { "at": 31, "entities": { "eq": 4 } },
+    { "at": 51, "entity": { "index": 1, "generation": 0 }, "field": "health.hp", "value": { "eq": 92 } },
+    { "at": 51, "entity": { "index": 3, "generation": 0 }, "field": "health.hp", "value": { "min": 1, "max": 41 } },
+    { "at": 61, "entities": { "eq": 3 } },
+    { "at": 61, "component": "health", "count": { "eq": 3 } },
+    { "at": 600, "entity": { "index": 2, "generation": 0 }, "field": "velocity.x", "value": { "raw_min": "-21474836480", "raw_max": "21474836480" } },
+    { "at": 600, "entity": { "index": 0, "generation": 0 }, "field": "position.x", "value": { "raw": "9856949943840" } },
+    { "at": 600, "entity": { "index": 0, "generation": 0 }, "field": "position.y", "value": { "approx": 982.0, "tol": 1e-6 } },
+    { "at": 600, "state_hash": "17906231570684560215" },
+    { "at": 600, "replay_hash": "17151601846166727076" }
+  ]
+}
