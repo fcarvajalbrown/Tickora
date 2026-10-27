@@ -23,7 +23,8 @@ Current state:
 - Bunker main loop and tick answered in `research-private/bunker/NOTES.md`; the decompile and pyghidra-mcp indexes are built.
 
 Open:
-- Plan of record is `ROADMAP.md` (phases 5 asset pipeline, 6 grey-box 3D renderer, 7 audio, 8 coal-mine demo, 9 public release, order confirmed by Felipe), with ADRs 0002 (first-person 3D target) and 0003 (grey-box 3D first, meshes and textures from generators) and the tool inventory in `docs/research/demo-toolkit.md`. Releases are in `CHANGELOG.md`; each phase is one `0.MINOR.0` version.
+- Corpofobia's `tools/credits/build_credits.py` still has the `named_sources` bug fixed in Tickora's copy (`row.get("title", row["name"])` evaluates `row["name"]` eagerly, so a title-only record such as a Freesound sound crashes the build).
+- Plan of record is `ROADMAP.md` (phases 6 grey-box 3D renderer, 7 audio, 8 coal-mine demo, 9 public release; order confirmed by Felipe), with ADRs 0002 (first-person 3D target), 0003 (grey-box 3D first, meshes and textures from generators) and 0004 (assets in plain git, no LFS). Phase 5 (asset pipeline) shipped as 0.5.0: CC0 fetchers, meshkit, mesh checks, PSX bake and credits under `tools/`, 67 Python tool tests in CI; run them with `.venv/Scripts/python -I -m unittest discover -s tests/tools -p 'test_*.py'`. Tags v0.1.0 to v0.5.0 mark phase ends; releases in `CHANGELOG.md`.
 - Tolerance presets: only `zero` and custom. Add `low`, `medium` and `high` when a renderer feature (anti-aliasing, textures, 3D) makes adapters differ, measured against the CI software adapters.
 - Only the `top` viewport exists; `perspective`, `front` and `side` are reserved and rejected until there is 3D.
 - MCP: one simulation per process, while 2026-07-28 says cross-request state should be addressed by an explicit identifier; fine for one agent. No `outputSchema` on tools, including `tickora_run_scenario`. No input-log export or replay tool.
