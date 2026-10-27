@@ -3,10 +3,11 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tickora_core::ecs::{Entity, FieldValue};
+use tickora_render::{DEFAULT_SIZE, MAX_SIZE, MIN_SIZE};
 
 use crate::host::Host;
 use crate::jsonrpc::RpcError;
-use crate::scenario;
+use crate::{base64, scenario, shot};
 
 pub const MAX_STEP_TICKS: u64 = 100_000;
 pub const DEFAULT_QUERY_LIMIT: u64 = 100;
@@ -71,6 +72,22 @@ pub fn definitions<H: Host>(host: &H) -> Value {
             }),
             &[],
         ),
+        tool(
+            "tickora_screenshot",
+            "Render the live simulation offscreen and return it as a PNG image plus metadata, without stepping it. The camera follows Unreal's viewport model: viewport \"top\" (orthographic, +x right, +y up), location [x, y] at the image centre and ortho_width in world units across the image. Every result carries a camera string such as \"top 0 0 256\"; pass it back as camera to reproduce the view, the way Unreal's BugItGo does. view_mode \"unlit\" fills each entity, \"wireframe\" outlines it. pixel_hash is a hash of the raw RGBA pixels. With path, the PNG is also written there, relative to the server's working directory.",
+            json!({
+                "viewport": { "type": "string", "enum": ["top"], "default": "top" },
+                "location": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "default": [0, 0] },
+                "ortho_width": { "type": "number", "exclusiveMinimum": 0, "default": 256 },
+                "camera": { "type": "string", "description": "A camera string from an earlier result, instead of viewport, location and ortho_width." },
+                "width": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "default": DEFAULT_SIZE },
+                "height": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "default": DEFAULT_SIZE },
+                "view_mode": { "type": "string", "enum": ["unlit", "wireframe"], "default": "unlit" },
+                "show_grid": { "type": "boolean", "default": true },
+                "path": { "type": "string" },
+            }),
+            &[],
+        ),
     ])
 }
 
@@ -85,22 +102,28 @@ pub fn call<H: Host>(host: &mut H, params: &Map<String, Value>) -> Result<Value,
         Some(Value::Object(args)) => args,
         Some(_) => return Err(RpcError::invalid_params("arguments must be an object")),
     };
+    let plain = |structured: Value| (structured, None);
     let outcome = match name {
-        "tickora_step" => step(host, args),
-        "tickora_state_hash" => only(args, &[]).map(|()| hashes(host)),
-        "tickora_list_components" => only(args, &[]).map(|()| list_components(host)),
-        "tickora_query" => query(host, args),
-        "tickora_get_entity" => get_entity(host, args),
-        "tickora_reset" => reset(host, args),
-        "tickora_run_scenario" => run_scenario(host, args),
+        "tickora_step" => step(host, args).map(plain),
+        "tickora_state_hash" => only(args, &[]).map(|()| plain(hashes(host))),
+        "tickora_list_components" => only(args, &[]).map(|()| plain(list_components(host))),
+        "tickora_query" => query(host, args).map(plain),
+        "tickora_get_entity" => get_entity(host, args).map(plain),
+        "tickora_reset" => reset(host, args).map(plain),
+        "tickora_run_scenario" => run_scenario(host, args).map(plain),
+        "tickora_screenshot" => screenshot(host, args),
         _ => return Err(RpcError::invalid_params(format!("unknown tool {name}"))),
     };
     Ok(match outcome {
-        Ok(structured) => json!({
-            "content": [{ "type": "text", "text": structured.to_string() }],
-            "structuredContent": structured,
-            "isError": false,
-        }),
+        Ok((structured, image)) => {
+            let mut content: Vec<Value> = image.into_iter().collect();
+            content.push(json!({ "type": "text", "text": structured.to_string() }));
+            json!({
+                "content": content,
+                "structuredContent": structured,
+                "isError": false,
+            })
+        }
         Err(message) => json!({
             "content": [{ "type": "text", "text": message }],
             "isError": true,
@@ -239,6 +262,42 @@ fn run_scenario<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
     }?;
     let mut fresh = host.fresh(parsed.seed);
     scenario::run(&mut fresh, &parsed).map(|report| report.to_json())
+}
+
+fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), String> {
+    let mut allowed = shot::SHOT_KEYS.to_vec();
+    allowed.push("path");
+    only(args, &allowed)?;
+    let path: Option<String> = typed(args, "path")?;
+    let shot = shot::from_args(args)?;
+    let capture = shot::capture(host, &shot)?;
+    let png = capture.image.to_png()?;
+    if let Some(path) = &path {
+        let path = Path::new(path);
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(path, &png).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    let mut structured = json!({
+        "tick": host.tick(),
+        "state_hash": host.state_hash().to_string(),
+        "width": capture.image.width,
+        "height": capture.image.height,
+        "pixel_hash": capture.image.pixel_hash().to_string(),
+        "camera": shot.camera.to_string(),
+        "view_mode": shot.view_mode.name(),
+        "show_grid": shot.show_grid,
+        "off_screen": capture.off_screen,
+        "adapter": capture.adapter,
+        "bucket": capture.bucket,
+    });
+    if let Some(path) = path {
+        structured["path"] = json!(path);
+    }
+    let image = json!({ "type": "image", "data": base64::encode(&png), "mimeType": "image/png" });
+    Ok((structured, Some(image)))
 }
 
 fn entity_json(entity: Entity) -> Value {

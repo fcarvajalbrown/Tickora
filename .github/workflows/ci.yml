@@ -39,6 +39,8 @@ jobs:
             "file_format_version": "1.0.1"
           }
           EOF
+          find mesa -name 'libvulkan_lvp.so*'
+          ldd "$PWD/mesa/lib/x86_64-linux-gnu/libvulkan_lvp.so" | grep -i "not found" || true
           echo "VK_DRIVER_FILES=$PWD/icd.json" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$PWD/mesa/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
