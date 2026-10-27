@@ -1,6 +1,6 @@
 # Phase 6 design: grey-box 3D renderer
 
-Status: draft, waiting for Felipe's approval.
+Status: approved by Felipe. Eye height still open.
 
 ADRs 0002 and 0003 set the target: a first-person 3D view with a depth buffer, meshes, textures and point lights, drawn from generator output. Under the CLAUDE.md rule, every piece starts from how Unreal does it. Where Unreal's choice does not transport, the reason is given.
 
