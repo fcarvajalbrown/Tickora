@@ -16,10 +16,15 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - CC0 sound search across BigSoundBank, Freesound CC0, the Red Library, Wikimedia Commons and OpenGameArt, per-source fetchers with manifests under `specs/audio/`, and `find_blows` for cutting single impacts.
 - `meshkit` and `interior_kit`: seeded GLB pieces from JSON specs and a `layout.csv` in Unreal's convention; mesh checks `check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check` and `canonical_glb`.
 - `psx_bake` (CC0 maps to PSX-size albedo with occlusion and height shading) and `contact_sheet`.
+- `docs/licences/` for records of assets that are not CC0, and `build_credits`, which builds credits from the asset manifests.
 
 ### Changed
 
 - PRD: genre focus and phase order (asset pipeline, 3D renderer, audio, demo, release).
+
+### Fixed
+
+- `build_credits` no longer fails on a source record that has a title and no name, such as a Freesound sound.
 
 ## [0.4.0]
 

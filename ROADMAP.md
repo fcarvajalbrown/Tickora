@@ -25,7 +25,7 @@ Status: **Not Started**. Tools listed in `docs/research/demo-toolkit.md`; ADR 00
 2. Done. CC0 sound search and fetchers (BigSoundBank, Freesound CC0, Red Library, Commons, OpenGameArt) in `tools/cc0_audio/`, manifests under `specs/audio/`; live search and Freesound fetch checked.
 3. Done. `meshkit`, `interior_kit` and the mesh checks (`check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check`, `canonical_glb`) in `tools/`; 45 tool tests; a probe tunnel piece built, gated and rendered with F3D.
 4. Done. `psx_bake` and `contact_sheet` in `tools/cc0_textures/`; 47 tool tests; the fetched ambientCG rock baked to a 64 px PSX texture and sheeted.
-5. Not Started. Licence records folder and credits built from the manifests (`build_credits`).
+5. Done. `docs/licences/` for non-CC0 records and `build_credits` (with `song_licences`); 67 tool tests; credits built from real ambientCG and Freesound manifests.
 6. Done. Python dependencies approved by Felipe and pinned in `tools/requirements.txt` (numpy 2.5.4, Pillow 12.3.0, soundfile 0.14.0, trimesh 5.1.1); repo `.venv` imports all four.
 
 ## Phase 6: grey-box 3D renderer, 0.6.0
