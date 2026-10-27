@@ -11,7 +11,8 @@ Current state:
 
 Open:
 - License: Felipe says proprietary for now, to discuss later; PRD.md still says MIT OR Apache-2.0, unchanged. README has no license section; no license files added. The workspace sets `publish = false` and no `license` field.
-- Floats: the core has no float math. When rendering or physics needs floats, decide between fixed-point and a restricted f32 policy before adding them; cross-platform f32 transcendental results are not guaranteed identical.
+- Floats: decided, fixed-point in hashed state, f32 only for derived output (rendering, MCP output), never written back into hashed state; gameplay code uses a typed fixed-point wrapper with operator overloads. Not yet an ADR; the ADR text is drafted for Felipe's review before any file is written. Corpofobia (Godot, GDScript floats) shows the agentic workflow working well; it has no cross-machine replay-hash requirement, so it does not argue for floats in Tickora's hashed state.
+- Next: ECS inside tickora-core, after the float-policy ADR.
 - ECS: PRD section 6 names an ECS; phase 1 ships only the tick, RNG, input log and hash. The ECS is not started and needs its own plan.
 - FNV-1a is not collision resistant; fine for replay checks, not for any security use.
 - Bunker: which game state toggles variable update inside the fixed loop; confirm by xref that the scene update is the fixed update handler.
