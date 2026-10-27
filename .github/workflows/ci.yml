@@ -50,3 +50,18 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo test --workspace --release
+      - name: Render scenario screenshots
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/ci-shots
+          mkdir -p target/ci-shots
+          cp -r scenarios target/ci-shots/
+          rm -rf target/ci-shots/scenarios/goldens
+          cargo run -q --release -p tickora-mcp -- scenario --record target/ci-shots/scenarios/arena.json
+      - name: Upload scenario screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-shots-${{ runner.os }}
+          path: target/ci-shots/scenarios/goldens

@@ -115,6 +115,6 @@ fn the_mcp_tool_runs_a_scenario_file_by_path() {
     let report = &reply["structuredContent"];
     assert_eq!(report["passed"], true);
     assert_eq!(report["state_hash"], "17906231570684560215");
-    assert_eq!(report["results"].as_array().unwrap().len(), 16);
+    assert_eq!(report["results"].as_array().unwrap().len(), 20);
     assert_eq!(host.tick(), 0);
 }
