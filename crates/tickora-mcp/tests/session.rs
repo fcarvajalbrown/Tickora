@@ -168,6 +168,11 @@ fn both_protocol_eras_drive_the_simulation_to_the_same_hashes() {
             .iter()
             .all(|reply| reply["result"]["resultType"] == "complete")
     );
+    assert!(
+        modern[1..]
+            .iter()
+            .all(|reply| reply["result"].get("ttlMs").is_none())
+    );
 }
 
 #[test]
@@ -228,6 +233,8 @@ fn tools_list_exposes_the_six_tools_with_object_schemas() {
     script.request("tools/list", json!({}));
     let replies = script.run(0);
     let tools = replies[1]["result"]["tools"].as_array().unwrap();
+    assert_eq!(replies[1]["result"]["cacheScope"], "public");
+    assert!(replies[1]["result"]["ttlMs"].as_u64().is_some());
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         names,

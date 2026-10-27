@@ -13,6 +13,9 @@ pub const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion
 pub const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
 pub const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 
+const CACHEABLE_METHODS: [&str; 2] = ["server/discover", "tools/list"];
+const CACHE_TTL_MS: u64 = 3_600_000;
+
 const INSTRUCTIONS: &str = "Tickora deterministic simulation. Step it with tickora_step, read state with tickora_list_components, tickora_query and tickora_get_entity, and compare runs with tickora_state_hash. The same seed and the same call sequence always give the same hashes.";
 
 pub struct Server<H> {
@@ -104,6 +107,10 @@ impl<H: Host> Server<H> {
             "tools/call" => tools::call(&mut self.host, params)?,
             _ => return Err(method_not_found(method)),
         };
+        if CACHEABLE_METHODS.contains(&method) {
+            result["ttlMs"] = json!(CACHE_TTL_MS);
+            result["cacheScope"] = json!("public");
+        }
         result["resultType"] = json!("complete");
         result["_meta"] = json!({ META_SERVER_INFO: server_info() });
         Ok(result)
@@ -219,6 +226,8 @@ mod tests {
         assert_eq!(result["resultType"], "complete");
         assert_eq!(result["supportedVersions"], json!(["2026-07-28"]));
         assert_eq!(result["capabilities"], json!({ "tools": {} }));
+        assert_eq!(result["ttlMs"], CACHE_TTL_MS);
+        assert_eq!(result["cacheScope"], "public");
         assert_eq!(result["_meta"][META_SERVER_INFO]["name"], "tickora-mcp");
     }
 
