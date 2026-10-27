@@ -21,13 +21,19 @@ The data model is an ECS and game logic is written as Rust crates. There is no v
 
 ## Scenario files
 
-A scenario is a JSON file with a seed, inputs at given ticks, a final tick and a list of assertions. An assertion can check the state or replay hash, the number of live entities, how many entities hold a component or a set of components, or one field of one entity. `scenarios/arena.json` runs the demo arena for 600 ticks with 16 assertions.
+A scenario is a JSON file with a seed, inputs at given ticks, a final tick and a list of assertions. An assertion can check the state or replay hash, the number of live entities, how many entities hold a component or a set of components, or one field of one entity. `scenarios/arena.json` runs the demo arena for 600 ticks with 20 assertions, four of them screenshots.
 
 ```
 cargo run -p tickora-mcp -- scenario scenarios/arena.json
 ```
 
 The command exits 0 when every assertion passes, 1 when one fails and 2 when a file can't be read or parsed. `--json` prints the full report. Over MCP, `tickora_run_scenario` takes a path or the scenario inline and runs it on its own simulation, so the agent's live one is left alone. The format is described in `docs/scenarios.md`.
+
+## Screenshots
+
+The engine renders the simulation offscreen with wgpu (DX12 on Windows, Vulkan on Linux) and no window opens. Over MCP, `tickora_screenshot` returns the frame as an image the agent can look at, plus the tick, state hash and a hash of the pixels. The camera copies Unreal's viewport model: a top orthographic view with a location and an ortho width, and a camera string that brings back the same view later, as BugItGo does in Unreal.
+
+Scenario files can check a frame against golden images, with the tolerance model of Unreal's screenshot comparer. Shapes snap to whole pixels, and an NVIDIA RTX 2050, WARP and Mesa lavapipe all render the demo arena to identical files, so the goldens match exactly. Details are in `docs/screenshots.md`.
 
 ## Inspired by HPL3
 
