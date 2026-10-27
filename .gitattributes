@@ -1,1 +1,16 @@
 * text=auto eol=lf
+
+*.rs   diff=rust
+*.py   diff=python
+*.md   diff=markdown
+
+*.png  binary
+*.jpg  binary
+*.glb  binary
+*.wav  binary
+*.ogg  binary
+*.ttf  binary
+*.zip  binary
+
+assets/gen/** linguist-generated
+scenarios/goldens/** linguist-generated
