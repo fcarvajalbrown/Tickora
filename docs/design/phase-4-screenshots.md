@@ -1,6 +1,6 @@
 # Phase 4 design: screenshot capture
 
-Status: proposed, waiting for Felipe's approval. No code until it is approved.
+Status: approved by Felipe.
 
 The decisions behind this design are recorded in `notes/session-notes.md`. Under the CLAUDE.md rule, anything with an Unreal Engine counterpart starts from how Unreal does it.
 
