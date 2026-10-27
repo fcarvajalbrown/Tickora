@@ -8,6 +8,25 @@ use crate::mesh::Mesh;
 use crate::scene::Color;
 
 pub const VERTEX_SIZE: u64 = 48;
+pub const MAX_LIGHTS: usize = 16;
+pub const CENTIMETRES_PER_METRE: f64 = 100.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointLight {
+    pub location: Vec3,
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub attenuation_radius: f64,
+}
+
+impl PointLight {
+    pub fn falloff(&self, distance: f64) -> f64 {
+        let metres = distance / CENTIMETRES_PER_METRE;
+        let ratio = distance / self.attenuation_radius;
+        let window = (1.0 - ratio.powi(4)).clamp(0.0, 1.0);
+        window * window / (metres * metres + 1.0)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeshInstance {
@@ -63,7 +82,9 @@ impl MeshInstance {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene3 {
     pub background: Color,
+    pub ambient: [f32; 3],
     pub instances: Vec<MeshInstance>,
+    pub lights: Vec<PointLight>,
     pub textures: BTreeMap<String, Arc<Image>>,
     pub camera: PerspectiveCamera,
 }
@@ -81,6 +102,58 @@ impl Batch {
 }
 
 impl Scene3 {
+    pub fn light_bytes(&self) -> Result<Vec<u8>, String> {
+        if self.lights.len() > MAX_LIGHTS {
+            return Err(format!(
+                "{} point lights; at most {MAX_LIGHTS} per frame",
+                self.lights.len()
+            ));
+        }
+        for light in &self.lights {
+            let numbers = light
+                .location
+                .iter()
+                .copied()
+                .chain(light.color.map(f64::from))
+                .chain([f64::from(light.intensity), light.attenuation_radius]);
+            if numbers.into_iter().any(|v| !v.is_finite()) {
+                return Err("point light values must be finite".to_string());
+            }
+            if light.attenuation_radius <= 0.0 || light.intensity < 0.0 {
+                return Err(
+                    "point light attenuation_radius must be above 0 and intensity at least 0"
+                        .to_string(),
+                );
+            }
+        }
+        let mut bytes = Vec::with_capacity(32 + MAX_LIGHTS * 32);
+        for value in self.ambient.into_iter().chain([0.0]) {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [self.lights.len() as u32, 0, 0, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for index in 0..MAX_LIGHTS {
+            let values = match self.lights.get(index) {
+                Some(light) => [
+                    light.location[0] as f32,
+                    light.location[1] as f32,
+                    light.location[2] as f32,
+                    light.attenuation_radius as f32,
+                    light.color[0],
+                    light.color[1],
+                    light.color[2],
+                    light.intensity,
+                ],
+                None => [0.0; 8],
+            };
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        Ok(bytes)
+    }
+
     pub fn triangles(&self) -> Vec<Batch> {
         self.batches(|indices| indices.to_vec())
     }
@@ -189,7 +262,9 @@ mod tests {
     fn scene(instances: Vec<MeshInstance>) -> Scene3 {
         Scene3 {
             background: [0, 0, 0, 255],
+            ambient: [0.0; 3],
             instances,
+            lights: Vec::new(),
             textures: BTreeMap::new(),
             camera: PerspectiveCamera::new([0.0, 0.0, 0.0], Rotator::default(), 90.0).unwrap(),
         }
@@ -242,6 +317,59 @@ mod tests {
             .map(|b| (b.material.as_str(), b.vertex_count()))
             .collect();
         assert_eq!(names, [("dirt", 6), ("stone", 12)]);
+    }
+
+    fn light(distance_radius: f64) -> PointLight {
+        PointLight {
+            location: [0.0; 3],
+            color: [1.0; 3],
+            intensity: 1.0,
+            attenuation_radius: distance_radius,
+        }
+    }
+
+    #[test]
+    fn falloff_follows_karis_equation_nine_in_metres() {
+        let lamp = light(1000.0);
+        assert_eq!(lamp.falloff(0.0), 1.0);
+        let at_one_metre = (1.0 - 0.1f64.powi(4)).powi(2) / 2.0;
+        assert!((lamp.falloff(100.0) - at_one_metre).abs() < 1e-12);
+        let at_half_radius = (1.0 - 0.5f64.powi(4)).powi(2) / (25.0 + 1.0);
+        assert!((lamp.falloff(500.0) - at_half_radius).abs() < 1e-12);
+        assert_eq!(lamp.falloff(1000.0), 0.0);
+        assert_eq!(lamp.falloff(2000.0), 0.0);
+    }
+
+    #[test]
+    fn light_bytes_pack_ambient_count_and_sixteen_slots() {
+        let mut scene = scene(Vec::new());
+        scene.ambient = [0.25, 0.5, 1.0];
+        scene.lights.push(PointLight {
+            location: [1.0, 2.0, 3.0],
+            color: [1.0, 0.5, 0.0],
+            intensity: 4.0,
+            attenuation_radius: 500.0,
+        });
+        let bytes = scene.light_bytes().unwrap();
+        assert_eq!(bytes.len(), 32 + MAX_LIGHTS * 32);
+        assert_eq!(floats(&bytes[..16]), [0.25, 0.5, 1.0, 0.0]);
+        assert_eq!(&bytes[16..20], &1u32.to_le_bytes());
+        assert_eq!(
+            floats(&bytes[32..64]),
+            [1.0, 2.0, 3.0, 500.0, 1.0, 0.5, 0.0, 4.0]
+        );
+        assert!(bytes[64..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn light_bytes_reject_too_many_or_bad_lights() {
+        let mut scene = scene(Vec::new());
+        scene.lights = vec![light(100.0); MAX_LIGHTS + 1];
+        assert!(scene.light_bytes().is_err());
+        scene.lights = vec![light(0.0)];
+        assert!(scene.light_bytes().is_err());
+        scene.lights = vec![light(f64::NAN)];
+        assert!(scene.light_bytes().is_err());
     }
 
     #[test]

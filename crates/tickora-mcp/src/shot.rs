@@ -150,6 +150,9 @@ pub fn from_args(args: &serde_json::Map<String, Value>) -> Result<Shot, String> 
         Some(name) => name.parse()?,
         None => defaults.view_mode,
     };
+    if view_mode == ViewMode::Lit && camera.viewport() == Viewport::Top {
+        return Err("view_mode \"lit\" needs the perspective viewport".to_string());
+    }
     let show_grid = match args.get("show_grid") {
         None => defaults.show_grid,
         Some(Value::Bool(flag)) => *flag,

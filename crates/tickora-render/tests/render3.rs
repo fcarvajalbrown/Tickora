@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tickora_render::{
-    AdapterChoice, Image, Mesh, MeshInstance, PerspectiveCamera, Renderer, Rotator, Scene3,
-    ViewMode,
+    AdapterChoice, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Renderer, Rotator,
+    Scene3, ViewMode,
 };
 
 const BACKGROUND: [u8; 4] = [24, 24, 28, 255];
@@ -41,7 +41,9 @@ fn near_and_far(near_first: bool) -> Scene3 {
     };
     Scene3 {
         background: BACKGROUND,
+        ambient: [0.0; 3],
         instances,
+        lights: Vec::new(),
         textures: BTreeMap::new(),
         camera: eye(),
     }
@@ -117,7 +119,9 @@ fn rejects_sizes_out_of_range() {
 fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
     let scene = |location: [f64; 3]| Scene3 {
         background: BACKGROUND,
+        ambient: [0.0; 3],
         instances: vec![MeshInstance::new(cube(), location)],
+        lights: Vec::new(),
         textures: BTreeMap::new(),
         camera: eye(),
     };
@@ -138,7 +142,9 @@ fn psx_bake_texture_shows_its_texels_unlit() {
     cube.color = Some([1.0, 1.0, 1.0, 1.0]);
     let scene = Scene3 {
         background: BACKGROUND,
+        ambient: [0.0; 3],
         instances: vec![cube],
+        lights: Vec::new(),
         textures: BTreeMap::from([("stone".to_string(), Arc::new(checker))]),
         camera: eye(),
     };
@@ -147,4 +153,73 @@ fn psx_bake_texture_shows_its_texels_unlit() {
     assert_eq!(pixel_at(&image, 0.1, 0.05), [40, 40, 200, 255]);
     let (wireframe, _) = render(&scene, ViewMode::Wireframe);
     assert_eq!(pixel_at(&wireframe, 0.1, -0.05), BACKGROUND);
+}
+
+fn lit_cube(lights: Vec<PointLight>) -> Scene3 {
+    let mut cube = MeshInstance::new(cube(), [300.0, 0.0, 0.0]);
+    cube.color = Some([1.0, 1.0, 1.0, 1.0]);
+    Scene3 {
+        background: BACKGROUND,
+        ambient: [0.25, 0.25, 0.25],
+        instances: vec![cube],
+        lights,
+        textures: BTreeMap::new(),
+        camera: eye(),
+    }
+}
+
+fn lamp(x: f64) -> PointLight {
+    PointLight {
+        location: [x, 0.0, 50.0],
+        color: [1.0, 1.0, 1.0],
+        intensity: 1.0,
+        attenuation_radius: 1000.0,
+    }
+}
+
+fn luma(pixel: [u8; 4]) -> u32 {
+    u32::from(pixel[0]) + u32::from(pixel[1]) + u32::from(pixel[2])
+}
+
+#[test]
+fn lit_ambient_alone_scales_the_colour() {
+    let (image, _) = render(&lit_cube(Vec::new()), ViewMode::Lit);
+    let centre = pixel_at(&image, 0.0, 0.05);
+    for channel in &centre[..3] {
+        assert!((63..=64).contains(channel), "{centre:?}");
+    }
+    assert_eq!(centre[3], 255);
+}
+
+#[test]
+fn nearer_lamp_lights_the_face_brighter() {
+    let (near, _) = render(&lit_cube(vec![lamp(200.0)]), ViewMode::Lit);
+    let (far, _) = render(&lit_cube(vec![lamp(0.0)]), ViewMode::Lit);
+    let (dark, _) = render(&lit_cube(Vec::new()), ViewMode::Lit);
+    let at = |image: &Image| luma(pixel_at(image, 0.0, 0.05));
+    assert!(at(&near) > at(&far), "{} vs {}", at(&near), at(&far));
+    assert!(at(&far) > at(&dark), "{} vs {}", at(&far), at(&dark));
+}
+
+#[test]
+fn lamp_behind_the_face_adds_nothing() {
+    let (behind, _) = render(&lit_cube(vec![lamp(1000.0)]), ViewMode::Lit);
+    let (dark, _) = render(&lit_cube(Vec::new()), ViewMode::Lit);
+    assert_eq!(pixel_at(&behind, 0.0, 0.05), pixel_at(&dark, 0.0, 0.05));
+}
+
+#[test]
+fn unlit_ignores_lamps() {
+    let (lamps, _) = render(&lit_cube(vec![lamp(200.0)]), ViewMode::Unlit);
+    assert_eq!(pixel_at(&lamps, 0.0, 0.05), [255, 255, 255, 255]);
+}
+
+#[test]
+fn too_many_lamps_is_an_error() {
+    let scene = lit_cube(vec![lamp(200.0); 17]);
+    assert!(
+        renderer()
+            .render3(&scene, &scene.camera, ViewMode::Lit, WIDTH, HEIGHT)
+            .is_err()
+    );
 }

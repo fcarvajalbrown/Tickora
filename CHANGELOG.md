@@ -10,6 +10,7 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - GLB mesh reader on `gltf` 1.4.1: meshkit's metres, Y up, map to Unreal centimetres, Z up; skins, morph targets, sparse accessors and external buffers are rejected by name.
 - Depth buffer (`Depth32Float`, reversed Z) and mesh drawing: `Scene3` of mesh instances with location, rotation, scale and colour override, drawn per material in `unlit` or `wireframe` (triangle edges as a line list), with `off_screen` counted against the view frustum.
 - Textures by material name from `psx_bake` output, uploaded without mipmaps and sampled nearest-neighbour with repeat; the texel multiplies the material colour. RGB PNGs now read as opaque RGBA.
+- `lit` view mode with up to 16 point lights after `UPointLightComponent`: diffuse Lambert plus ambient, distance falloff from Karis 2013 equation (9) with distance in metres, attenuation radius as the window. `lit` on the `top` viewport is an error.
 - `tools/checker_maps`: checker test patterns written as ambientCG-style colour maps for `psx_bake`; 3 tool tests.
 - `specs/render_fixtures/` and its meshes under `assets/gen/render_fixtures/`, built with `interior_kit` and passing `mesh_gate`.
 

@@ -10,6 +10,7 @@ pub enum Fill {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
+    Lit,
     Unlit,
     Wireframe,
 }
@@ -17,6 +18,7 @@ pub enum ViewMode {
 impl ViewMode {
     pub fn name(self) -> &'static str {
         match self {
+            ViewMode::Lit => "lit",
             ViewMode::Unlit => "unlit",
             ViewMode::Wireframe => "wireframe",
         }
@@ -24,7 +26,7 @@ impl ViewMode {
 
     pub fn fill(self) -> Fill {
         match self {
-            ViewMode::Unlit => Fill::Solid,
+            ViewMode::Lit | ViewMode::Unlit => Fill::Solid,
             ViewMode::Wireframe => Fill::Outline,
         }
     }
@@ -35,10 +37,11 @@ impl std::str::FromStr for ViewMode {
 
     fn from_str(text: &str) -> Result<Self, String> {
         match text {
+            "lit" => Ok(ViewMode::Lit),
             "unlit" => Ok(ViewMode::Unlit),
             "wireframe" => Ok(ViewMode::Wireframe),
             other => Err(format!(
-                "unknown view_mode {other:?}; expected \"unlit\" or \"wireframe\""
+                "unknown view_mode {other:?}; expected \"lit\", \"unlit\" or \"wireframe\""
             )),
         }
     }
@@ -281,7 +284,8 @@ mod tests {
             "wireframe".parse::<ViewMode>().unwrap().fill(),
             Fill::Outline
         );
-        assert!("lit".parse::<ViewMode>().is_err());
+        assert_eq!("lit".parse::<ViewMode>(), Ok(ViewMode::Lit));
+        assert!("shaded".parse::<ViewMode>().is_err());
     }
 
     #[test]

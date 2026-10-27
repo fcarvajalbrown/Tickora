@@ -14,7 +14,7 @@ pub const ADAPTER_ENV: &str = "TICKORA_ADAPTER";
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const VERTEX_SIZE: u64 = 12;
-const FRAME_UNIFORM_SIZE: u64 = 64;
+const FRAME_UNIFORM_SIZE: u64 = 64 + 32 + 32 * scene3::MAX_LIGHTS as u64;
 
 const SHADER: &str = "
 struct Out {
@@ -34,8 +34,16 @@ fn fs(input: Out) -> @location(0) vec4<f32> {
 ";
 
 const MESH_SHADER: &str = "
+struct Light {
+    position_radius: vec4<f32>,
+    color_intensity: vec4<f32>,
+}
+
 struct Frame {
     view_projection: mat4x4<f32>,
+    ambient: vec4<f32>,
+    counts: vec4<u32>,
+    lights: array<Light, 16>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -71,9 +79,29 @@ fn fs_unlit(input: Out) -> @location(0) vec4<f32> {
     let texel = textureSample(albedo, albedo_sampler, input.uv);
     return vec4<f32>(input.color.rgb * texel.rgb, 1.0);
 }
+
+@fragment
+fn fs_lit(input: Out) -> @location(0) vec4<f32> {
+    let texel = textureSample(albedo, albedo_sampler, input.uv);
+    let normal = normalize(input.normal);
+    var light = frame.ambient.rgb;
+    for (var index = 0u; index < frame.counts.x; index = index + 1u) {
+        let source = frame.lights[index];
+        let to_light = source.position_radius.xyz - input.world;
+        let distance = length(to_light);
+        let metres = distance / 100.0;
+        let ratio = distance / source.position_radius.w;
+        let window = saturate(1.0 - ratio * ratio * ratio * ratio);
+        let falloff = window * window / (metres * metres + 1.0);
+        let lambert = max(dot(normal, to_light / max(distance, 0.0001)), 0.0);
+        light = light + source.color_intensity.rgb * source.color_intensity.w * lambert * falloff;
+    }
+    return vec4<f32>(input.color.rgb * texel.rgb * light, 1.0);
+}
 ";
 
 struct MeshPipelines {
+    lit: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -216,15 +244,17 @@ impl Renderer {
     ) -> Result<(Image, usize), String> {
         check_size(width, height)?;
         let (batches, pipeline) = match view_mode {
+            ViewMode::Lit => (scene.triangles(), &self.mesh.lit),
             ViewMode::Unlit => (scene.triangles(), &self.mesh.triangles),
             ViewMode::Wireframe => (scene.lines(), &self.mesh.lines),
         };
-        let uniforms: Vec<u8> = camera
+        let mut uniforms: Vec<u8> = camera
             .view_projection(width, height)
             .column_major_f32()
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect();
+        uniforms.extend(scene.light_bytes()?);
         let frame_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -651,6 +681,7 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
         })
     };
     MeshPipelines {
+        lit: build(wgpu::PrimitiveTopology::TriangleList, "fs_lit"),
         triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
         lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
         frame_layout,
