@@ -20,7 +20,8 @@ Current state:
 Open:
 - Phase 4 (screenshot capture, wgpu offscreen per PRD section 6) is in progress, deciding before code. Decided:
   - Dependencies approved by Felipe: wgpu 30.0.1 with default features off (dx12, vulkan, wgsl, std), png 0.18.1, pollster 1.0.1, all MIT OR Apache-2.0. wgpu 30 needs Rust 1.87, so workspace `rust-version` goes from 1.85 to 1.87.
-  - Still to decide: what a screenshot call returns and what it renders for the arena; golden comparison and how CI gets an adapter; then the design for approval.
+  - Screenshot result, chosen by Felipe: always an MCP image block (base64 PNG) plus structured metadata (tick, state hash, width, height, PNG hash); an optional `path` argument also writes the PNG to disk.
+  - Still to decide: what it renders for the arena; golden comparison and how CI gets an adapter; then the design for approval.
 - Felipe must approve the project MCP server `tickora` once: run `claude` in the repo and accept it.
 - MCP: one simulation per process, while 2026-07-28 says cross-request state should be addressed by an explicit identifier; fine for one agent. No `outputSchema` on tools, including `tickora_run_scenario`. No input-log export or replay tool.
 - ECS not done: derive macro (needs a dependency decision), systems or schedules, `query3` and above, the trig tables ADR 0001 calls for.
