@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::camera::{PerspectiveCamera, Rotator};
+use crate::image::Image;
 use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
 use crate::scene::Color;
@@ -63,6 +64,7 @@ impl MeshInstance {
 pub struct Scene3 {
     pub background: Color,
     pub instances: Vec<MeshInstance>,
+    pub textures: BTreeMap<String, Arc<Image>>,
     pub camera: PerspectiveCamera,
 }
 
@@ -188,6 +190,7 @@ mod tests {
         Scene3 {
             background: [0, 0, 0, 255],
             instances,
+            textures: BTreeMap::new(),
             camera: PerspectiveCamera::new([0.0, 0.0, 0.0], Rotator::default(), 90.0).unwrap(),
         }
     }

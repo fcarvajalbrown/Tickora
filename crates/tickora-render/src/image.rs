@@ -63,14 +63,20 @@ impl Image {
             .ok_or("PNG is too large to decode")?;
         let mut buffer = vec![0; size];
         let frame = reader.next_frame(&mut buffer).map_err(|e| e.to_string())?;
-        if frame.color_type != png::ColorType::Rgba || frame.bit_depth != png::BitDepth::Eight {
-            return Err(format!(
-                "PNG must be 8-bit RGBA, found {:?} at {:?}",
-                frame.color_type, frame.bit_depth
-            ));
-        }
         buffer.truncate(frame.buffer_size());
-        Image::new(frame.width, frame.height, buffer)
+        let pixels = match (frame.color_type, frame.bit_depth) {
+            (png::ColorType::Rgba, png::BitDepth::Eight) => buffer,
+            (png::ColorType::Rgb, png::BitDepth::Eight) => buffer
+                .chunks(3)
+                .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
+                .collect(),
+            (color, depth) => {
+                return Err(format!(
+                    "PNG must be 8-bit RGB or RGBA, found {color:?} at {depth:?}"
+                ));
+            }
+        };
+        Image::new(frame.width, frame.height, pixels)
     }
 }
 
@@ -93,6 +99,20 @@ mod tests {
         let image = checker();
         let back = Image::from_png(&image.to_png().unwrap()).unwrap();
         assert_eq!(back, image);
+    }
+
+    #[test]
+    fn rgb_png_reads_as_opaque_rgba() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 2, 1);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[1, 2, 3, 4, 5, 6]).unwrap();
+        }
+        let image = Image::from_png(&bytes).unwrap();
+        assert_eq!(image.pixels, [1, 2, 3, 255, 4, 5, 6, 255]);
     }
 
     #[test]

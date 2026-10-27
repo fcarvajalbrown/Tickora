@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -41,6 +42,7 @@ fn near_and_far(near_first: bool) -> Scene3 {
     Scene3 {
         background: BACKGROUND,
         instances,
+        textures: BTreeMap::new(),
         camera: eye(),
     }
 }
@@ -116,6 +118,7 @@ fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
     let scene = |location: [f64; 3]| Scene3 {
         background: BACKGROUND,
         instances: vec![MeshInstance::new(cube(), location)],
+        textures: BTreeMap::new(),
         camera: eye(),
     };
     let (right, _) = render(&scene([300.0, 200.0, 0.0]), ViewMode::Unlit);
@@ -124,4 +127,24 @@ fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
     let (up, _) = render(&scene([300.0, 0.0, 150.0]), ViewMode::Unlit);
     assert_eq!(pixel_at(&up, 0.0, 0.9), STONE);
     assert_eq!(pixel_at(&up, 0.0, -0.9), BACKGROUND);
+}
+
+#[test]
+fn psx_bake_texture_shows_its_texels_unlit() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/gen/render_fixtures/textures/checker.png");
+    let checker = Image::from_png(&std::fs::read(path).unwrap()).unwrap();
+    let mut cube = MeshInstance::new(cube(), [300.0, 0.0, 0.0]);
+    cube.color = Some([1.0, 1.0, 1.0, 1.0]);
+    let scene = Scene3 {
+        background: BACKGROUND,
+        instances: vec![cube],
+        textures: BTreeMap::from([("stone".to_string(), Arc::new(checker))]),
+        camera: eye(),
+    };
+    let (image, _) = render(&scene, ViewMode::Unlit);
+    assert_eq!(pixel_at(&image, -0.1, 0.05), [200, 40, 40, 255]);
+    assert_eq!(pixel_at(&image, 0.1, 0.05), [40, 40, 200, 255]);
+    let (wireframe, _) = render(&scene, ViewMode::Wireframe);
+    assert_eq!(pixel_at(&wireframe, 0.1, -0.05), BACKGROUND);
 }

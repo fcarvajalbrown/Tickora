@@ -39,6 +39,8 @@ struct Frame {
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
+@group(1) @binding(0) var albedo: texture_2d<f32>;
+@group(1) @binding(1) var albedo_sampler: sampler;
 
 struct Out {
     @builtin(position) position: vec4<f32>,
@@ -66,12 +68,16 @@ fn vs(
 
 @fragment
 fn fs_unlit(input: Out) -> @location(0) vec4<f32> {
-    return vec4<f32>(input.color.rgb, 1.0);
+    let texel = textureSample(albedo, albedo_sampler, input.uv);
+    return vec4<f32>(input.color.rgb * texel.rgb, 1.0);
 }
 ";
 
 struct MeshPipelines {
     frame_layout: wgpu::BindGroupLayout,
+    texture_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    white: Image,
     triangles: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
 }
@@ -234,7 +240,7 @@ impl Renderer {
                 resource: frame_buffer.as_entire_binding(),
             }],
         });
-        let buffers: Vec<(&Batch, wgpu::Buffer)> = batches
+        let draws: Vec<(&Batch, wgpu::Buffer, wgpu::BindGroup)> = batches
             .iter()
             .map(|batch| {
                 let buffer = self
@@ -244,18 +250,60 @@ impl Renderer {
                         contents: &batch.vertices,
                         usage: wgpu::BufferUsages::VERTEX,
                     });
-                (batch, buffer)
+                let image = match (view_mode, scene.textures.get(&batch.material)) {
+                    (ViewMode::Wireframe, _) | (_, None) => &self.mesh.white,
+                    (_, Some(image)) => image.as_ref(),
+                };
+                (batch, buffer, self.texture_group(image))
             })
             .collect();
         let image = self.frame(scene.background, width, height, true, |pass| {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &frame_group, &[]);
-            for (batch, buffer) in &buffers {
+            for (batch, buffer, texture) in &draws {
+                pass.set_bind_group(1, texture, &[]);
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 pass.draw(0..batch.vertex_count(), 0..1);
             }
         })?;
         Ok((image, scene.off_screen(camera, width, height)))
+    }
+
+    fn texture_group(&self, image: &Image) -> wgpu::BindGroup {
+        let texture = self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("tickora albedo"),
+                size: wgpu::Extent3d {
+                    width: image.width,
+                    height: image.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &image.pixels,
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("tickora albedo"),
+            layout: &self.mesh.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.mesh.sampler),
+                },
+            ],
+        })
     }
 
     fn frame(
@@ -520,9 +568,39 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
             count: None,
         }],
     });
+    let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("tickora albedo"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("tickora nearest repeat"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
+        ..Default::default()
+    });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("tickora meshes"),
-        bind_group_layouts: &[Some(&frame_layout)],
+        bind_group_layouts: &[Some(&frame_layout), Some(&texture_layout)],
         ..Default::default()
     });
     let attributes = wgpu::vertex_attr_array![
@@ -576,6 +654,13 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
         triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
         lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
         frame_layout,
+        texture_layout,
+        sampler,
+        white: Image {
+            width: 1,
+            height: 1,
+            pixels: vec![255; 4],
+        },
     }
 }
 

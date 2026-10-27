@@ -9,6 +9,8 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - `perspective` viewport after Unreal's `LVT_Perspective`: camera string `perspective <x> <y> <z> <pitch> <yaw> <roll> <fov>` in BugItGo order, Unreal axes (centimetres, Z up, X forward), horizontal field of view, reversed-Z projection with an infinite far plane and a 10 cm near plane.
 - GLB mesh reader on `gltf` 1.4.1: meshkit's metres, Y up, map to Unreal centimetres, Z up; skins, morph targets, sparse accessors and external buffers are rejected by name.
 - Depth buffer (`Depth32Float`, reversed Z) and mesh drawing: `Scene3` of mesh instances with location, rotation, scale and colour override, drawn per material in `unlit` or `wireframe` (triangle edges as a line list), with `off_screen` counted against the view frustum.
+- Textures by material name from `psx_bake` output, uploaded without mipmaps and sampled nearest-neighbour with repeat; the texel multiplies the material colour. RGB PNGs now read as opaque RGBA.
+- `tools/checker_maps`: checker test patterns written as ambientCG-style colour maps for `psx_bake`; 3 tool tests.
 - `specs/render_fixtures/` and its meshes under `assets/gen/render_fixtures/`, built with `interior_kit` and passing `mesh_gate`.
 
 ## [0.5.0]
