@@ -23,7 +23,7 @@ Current state:
 - Bunker main loop and tick answered in `research-private/bunker/NOTES.md`; the decompile and pyghidra-mcp indexes are built.
 
 Open:
-- Phase 5 (demo game and public release, after legal review) is next and starts with decisions from Felipe.
+- Phase 5 (demo game and public release, after legal review) is in progress. Decided: a Bunker-style top-down survival game without combat (noise and light draw a monster, a generator burns limited fuel to keep tiles lit, reach the exit), set in a fictional abandoned coal mine inspired by Chile's southern mines; genre focus recorded in PRD.md section 5. Still to decide: where it lives and the default host, what counts as proof and whether CI runs it, and the PRD 12 release items (name, license, release scope). Then the design doc for approval before code.
 - Tolerance presets: only `zero` and custom. Add `low`, `medium` and `high` when a renderer feature (anti-aliasing, textures, 3D) makes adapters differ, measured against the CI software adapters.
 - Only the `top` viewport exists; `perspective`, `front` and `side` are reserved and rejected until there is 3D.
 - MCP: one simulation per process, while 2026-07-28 says cross-request state should be addressed by an explicit identifier; fine for one agent. No `outputSchema` on tools, including `tickora_run_scenario`. No input-log export or replay tool.
