@@ -8,6 +8,42 @@ pub enum Fill {
     Outline,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewMode {
+    Unlit,
+    Wireframe,
+}
+
+impl ViewMode {
+    pub fn name(self) -> &'static str {
+        match self {
+            ViewMode::Unlit => "unlit",
+            ViewMode::Wireframe => "wireframe",
+        }
+    }
+
+    pub fn fill(self) -> Fill {
+        match self {
+            ViewMode::Unlit => Fill::Solid,
+            ViewMode::Wireframe => Fill::Outline,
+        }
+    }
+}
+
+impl std::str::FromStr for ViewMode {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        match text {
+            "unlit" => Ok(ViewMode::Unlit),
+            "wireframe" => Ok(ViewMode::Wireframe),
+            other => Err(format!(
+                "unknown view_mode {other:?}; expected \"unlit\" or \"wireframe\""
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quad {
     pub center: [f64; 2],
@@ -237,6 +273,16 @@ mod tests {
             grid: None,
             quads,
         }
+    }
+
+    #[test]
+    fn view_modes_parse_and_pick_a_fill() {
+        assert_eq!("unlit".parse::<ViewMode>().unwrap().fill(), Fill::Solid);
+        assert_eq!(
+            "wireframe".parse::<ViewMode>().unwrap().fill(),
+            Fill::Outline
+        );
+        assert!("lit".parse::<ViewMode>().is_err());
     }
 
     #[test]

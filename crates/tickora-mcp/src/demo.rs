@@ -5,8 +5,15 @@ use tickora_core::hash::StateHasher;
 use tickora_core::input::{InputEvent, InputLog};
 use tickora_core::rng::Rng;
 use tickora_core::sim::{Runner, Sim};
+use tickora_render::{Color, Grid, Quad, Scene, ViewMode};
 
 use crate::host::Host;
+
+pub const BACKGROUND: Color = [24, 24, 28, 255];
+pub const GRID_LINE: Color = [48, 48, 56, 255];
+pub const GRID_AXIS: Color = [96, 96, 110, 255];
+pub const GRID_SPACING: f64 = 32.0;
+pub const ENTITY_HALF_EXTENT: f64 = 2.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Position {
@@ -106,6 +113,36 @@ impl Arena {
     pub fn world(&self) -> &World {
         &self.world
     }
+
+    pub fn scene(&self, view_mode: ViewMode) -> Scene {
+        let quads = self
+            .world
+            .query2::<Position, Health>()
+            .into_iter()
+            .map(|(_, position, health)| Quad {
+                center: [position.x.to_f64(), position.y.to_f64()],
+                half_extent: ENTITY_HALF_EXTENT,
+                color: hp_color(health.0),
+                fill: view_mode.fill(),
+            })
+            .collect();
+        Scene {
+            background: BACKGROUND,
+            grid: Some(Grid {
+                spacing: GRID_SPACING,
+                line: GRID_LINE,
+                axis: GRID_AXIS,
+            }),
+            quads,
+        }
+    }
+}
+
+pub fn hp_color(hp: i32) -> Color {
+    let hp = hp.clamp(0, 100) as u32;
+    let red = (255 * (100 - hp) + 50) / 100;
+    let green = (255 * hp + 50) / 100;
+    [red as u8, green as u8, 0, 255]
 }
 
 impl Default for Arena {
@@ -252,5 +289,65 @@ impl Host for ArenaHost {
 
     fn world(&self) -> &World {
         self.runner.sim().world()
+    }
+
+    fn scene(&self, view_mode: ViewMode) -> Scene {
+        self.runner.sim().scene(view_mode)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tickora_render::Fill;
+
+    #[test]
+    fn hp_colour_runs_from_red_to_green() {
+        assert_eq!(hp_color(0), [255, 0, 0, 255]);
+        assert_eq!(hp_color(50), [128, 128, 0, 255]);
+        assert_eq!(hp_color(100), [0, 255, 0, 255]);
+        assert_eq!(hp_color(-20), hp_color(0));
+        assert_eq!(hp_color(400), hp_color(100));
+    }
+
+    #[test]
+    fn scene_has_one_quad_per_live_entity_in_store_order() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[json!({"type": "spawn"}), json!({"type": "spawn"})])
+            .unwrap();
+        let scene = host.scene(ViewMode::Unlit);
+        let positions = host.world().query::<Position>();
+        assert_eq!(scene.quads.len(), 2);
+        for (quad, (_, position)) in scene.quads.iter().zip(positions) {
+            assert_eq!(quad.center, [position.x.to_f64(), position.y.to_f64()]);
+            assert_eq!(quad.color, hp_color(100));
+            assert_eq!(quad.fill, Fill::Solid);
+            assert_eq!(quad.half_extent, ENTITY_HALF_EXTENT);
+        }
+        assert_eq!(scene.background, BACKGROUND);
+        assert_eq!(scene.grid.unwrap().spacing, GRID_SPACING);
+    }
+
+    #[test]
+    fn wireframe_outlines_and_damage_changes_colour() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[
+            json!({"type": "spawn"}),
+            json!({"type": "damage", "amount": 50}),
+        ])
+        .unwrap();
+        let quad = host.scene(ViewMode::Wireframe).quads[0];
+        assert_eq!(quad.fill, Fill::Outline);
+        assert_eq!(quad.color, hp_color(50));
+    }
+
+    #[test]
+    fn scene_does_not_change_state() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[json!({"type": "spawn"})]).unwrap();
+        let before = host.state_hash();
+        host.scene(ViewMode::Unlit);
+        assert_eq!(host.state_hash(), before);
     }
 }
