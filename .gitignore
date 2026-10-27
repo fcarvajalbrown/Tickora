@@ -4,3 +4,4 @@ research-private/
 /target
 /.venv
 /work
+__pycache__/
