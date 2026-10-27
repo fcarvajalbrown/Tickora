@@ -12,9 +12,10 @@ Current state:
 Open:
 - License: Felipe says proprietary for now, to discuss later; PRD.md still says MIT OR Apache-2.0, unchanged. README has no license section; no license files added. The workspace sets `publish = false` and no `license` field.
 - Floats: decided, fixed-point in hashed state, f32 only for derived output (rendering, MCP output), never written back into hashed state; gameplay code uses a typed fixed-point wrapper with operator overloads. Recorded as ADR 0001 (i64, 32 fractional bits, i128 intermediates). Corpofobia (Godot, GDScript floats) shows the agentic workflow working well; it has no cross-machine replay-hash requirement, so it does not argue for floats in Tickora's hashed state.
-- Next: ECS inside tickora-core, after the float-policy ADR.
-- ECS: PRD section 6 names an ECS; phase 1 ships only the tick, RNG, input log and hash. The ECS is not started and needs its own plan.
+- ECS built (`ecs` module: `Entity` index plus generation, LIFO free list, one `SparseSet` per component, explicit `Component` trait with `NAME` and `hash_into`, `World` with `register`, `spawn`, `despawn`, `insert`, `remove`, `get`, `get_mut`, `query`, `query_mut`, `query2`, `component_names`, `state_hash`). Components are hashed in registration order; stale handles are rejected; iteration is dense order. Not done: a derive macro (needs a dependency decision), systems or schedules, `query3` and above, the trig tables ADR 0001 calls for.
+- `fx` module built per ADR 0001: saturating arithmetic (never wraps, so debug and release agree), i128 intermediates, divide by zero saturates by sign, `sqrt` is the exact floor root, `to_f32` and `to_f64` are for derived output only.
+- Tests now: 53 unit, 9 replay, 5 ECS (replay equality, log round trip, divergence, pinned hash `9281879666421455162` for seed 0xC0FFEE and 600 ticks, and a 5000-operation fuzz against a BTreeMap model). Debug and release pass locally on Windows; CI run 40540600776 passed on windows-latest and ubuntu-latest. The pinned value comes from this implementation.
+- Next candidates: MCP server over stdio (PRD phase 2), which can now query entities and component names.
 - FNV-1a is not collision resistant; fine for replay checks, not for any security use.
 - Bunker: which game state toggles variable update inside the fixed loop; confirm by xref that the scene update is the fixed update handler.
 - REA in MCP server mode, untested.
-- Two idle `cargo.exe` processes were still listed at session end; could not inspect their command lines (denied), so unconfirmed whether they are the editor's rust-analyzer or mine.
