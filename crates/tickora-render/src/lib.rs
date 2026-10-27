@@ -1,9 +1,12 @@
 pub mod camera;
+pub mod compare;
+pub mod golden;
 pub mod image;
 pub mod renderer;
 pub mod scene;
 
 pub use camera::{Camera, Viewport};
+pub use compare::{Comparison, Tolerance, compare};
 pub use image::Image;
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
 pub use scene::{Color, Fill, Grid, Layout, PixelRect, Quad, Scene};
