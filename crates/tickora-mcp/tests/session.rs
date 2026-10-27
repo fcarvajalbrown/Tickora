@@ -5,6 +5,7 @@ use tickora_core::sim::Runner;
 use tickora_mcp::Server;
 use tickora_mcp::demo::{Arena, ArenaHost, Command};
 use tickora_mcp::jsonrpc::INVALID_PARAMS;
+use tickora_render::Image;
 
 #[derive(Clone, Copy)]
 enum Era {
@@ -228,7 +229,7 @@ fn reset_returns_to_a_fresh_run() {
 }
 
 #[test]
-fn tools_list_exposes_the_seven_tools_with_object_schemas() {
+fn tools_list_exposes_the_eight_tools_with_object_schemas() {
     let mut script = Script::new(Era::Modern);
     script.request("tools/list", json!({}));
     let replies = script.run(0);
@@ -246,6 +247,7 @@ fn tools_list_exposes_the_seven_tools_with_object_schemas() {
             "tickora_get_entity",
             "tickora_reset",
             "tickora_run_scenario",
+            "tickora_screenshot",
         ]
     );
     for tool in tools {
@@ -355,4 +357,97 @@ fn a_scenario_runs_on_a_fresh_sim_and_leaves_the_live_one_alone() {
     }
     let missing = replies[7]["result"]["content"][0]["text"].as_str().unwrap();
     assert!(missing.contains("cannot read file"), "{missing}");
+}
+
+fn tool_error(reply: &Value) -> String {
+    assert_eq!(reply["result"]["isError"], true, "{reply}");
+    reply["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn screenshot_returns_an_image_block_and_metadata_without_stepping() {
+    let path = std::env::temp_dir().join(format!("tickora-shot-{}.png", std::process::id()));
+    let mut script = Script::new(Era::Modern);
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 3, "inputs": [{"type": "spawn"}, {"type": "spawn"}] }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "path": path.to_str().unwrap() }),
+    );
+    script.call("tickora_state_hash", json!({}));
+    let replies = script.run(0xC0FFEE);
+    let content = replies[2]["result"]["content"].as_array().unwrap();
+    assert_eq!(content[0]["type"], "image");
+    assert_eq!(content[0]["mimeType"], "image/png");
+    assert_eq!(content[1]["type"], "text");
+    let meta = structured(&replies[2]);
+    let png = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(content[0]["data"], tickora_mcp::base64::encode(&png));
+    let image = Image::from_png(&png).unwrap();
+    assert_eq!(meta["pixel_hash"], image.pixel_hash().to_string());
+    assert_eq!(
+        (meta["width"].as_u64(), meta["height"].as_u64()),
+        (Some(256), Some(256))
+    );
+    assert_eq!(meta["tick"], 3);
+    assert_eq!(meta["camera"], "top 0 0 256");
+    assert_eq!(meta["view_mode"], "unlit");
+    assert_eq!(meta["show_grid"], true);
+    assert_eq!(meta["off_screen"], 0);
+    assert_eq!(meta["path"], path.to_str().unwrap());
+    let backend = if cfg!(windows) { "dx12" } else { "vulkan" };
+    assert_eq!(meta["adapter"]["backend"], backend);
+    assert_eq!(
+        meta["bucket"],
+        format!("{}_{backend}", std::env::consts::OS)
+    );
+    assert_eq!(meta["state_hash"], structured(&replies[3])["state_hash"]);
+    assert_eq!(structured(&replies[3])["tick"], 3);
+}
+
+#[test]
+fn the_camera_string_reproduces_the_same_frame() {
+    let mut script = Script::new(Era::Legacy);
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 2, "inputs": [{"type": "spawn"}] }),
+    );
+    script.call("tickora_screenshot", json!({ "location": [12.5, -3], "ortho_width": 80, "width": 96, "height": 64, "view_mode": "wireframe", "show_grid": false }));
+    script.call("tickora_screenshot", json!({ "camera": "top 12.5 -3 80", "width": 96, "height": 64, "view_mode": "wireframe", "show_grid": false }));
+    script.call(
+        "tickora_screenshot",
+        json!({ "camera": "top 12.5 -3 80", "width": 96, "height": 64 }),
+    );
+    let replies = script.run(5);
+    let (first, second, third) = (
+        structured(&replies[2]),
+        structured(&replies[3]),
+        structured(&replies[4]),
+    );
+    assert_eq!(first["camera"], "top 12.5 -3 80");
+    assert_eq!(first["pixel_hash"], second["pixel_hash"]);
+    assert_ne!(first["pixel_hash"], third["pixel_hash"]);
+}
+
+#[test]
+fn bad_screenshot_arguments_are_tool_errors() {
+    let mut script = Script::new(Era::Modern);
+    script.call("tickora_screenshot", json!({ "viewport": "front" }));
+    script.call("tickora_screenshot", json!({ "width": 4096 }));
+    script.call(
+        "tickora_screenshot",
+        json!({ "camera": "top 0 0 64", "location": [0, 0] }),
+    );
+    script.call("tickora_screenshot", json!({ "zoom": 2 }));
+    let replies = script.run(0);
+    assert!(tool_error(&replies[1]).contains("reserved"));
+    assert!(tool_error(&replies[2]).contains("width"));
+    assert!(tool_error(&replies[3]).contains("not both"));
+    assert!(tool_error(&replies[4]).contains("zoom"));
 }
