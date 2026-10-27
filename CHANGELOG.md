@@ -13,6 +13,7 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - ADR 0004: assets in plain git without LFS; `.gitattributes` with binary, diff and generated attributes.
 - Pinned Python dependencies for the asset tools in `tools/requirements.txt`.
 - CC0 texture fetchers for ambientCG, Poly Haven and Texture.ninja, `fetch_missing` and `fetch_cc0`, with a `--manifest` option that writes the SHA-256 record under `specs/`.
+- CC0 sound search across BigSoundBank, Freesound CC0, the Red Library, Wikimedia Commons and OpenGameArt, per-source fetchers with manifests under `specs/audio/`, and `find_blows` for cutting single impacts.
 
 ### Changed
 

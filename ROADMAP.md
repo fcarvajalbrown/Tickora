@@ -22,7 +22,7 @@ Status: **Done** (0.1.0 to 0.4.0). Full text in the history.
 Status: **Not Started**. Tools listed in `docs/research/demo-toolkit.md`; ADR 0003.
 
 1. Done. CC0 texture fetchers (ambientCG, Poly Haven, Texture.ninja, `fetch_missing`, `fetch_cc0`) in `tools/`, manifest committed under `specs/`; 10 tests, live ambientCG fetch checked.
-2. Not Started. Copy the CC0 sound search and fetchers (BigSoundBank, Freesound CC0, Red Library, Commons, OpenGameArt) into `tools/`.
+2. Done. CC0 sound search and fetchers (BigSoundBank, Freesound CC0, Red Library, Commons, OpenGameArt) in `tools/cc0_audio/`, manifests under `specs/audio/`; live search and Freesound fetch checked.
 3. Not Started. Copy `meshkit` and the mesh checks (`check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check`, `canonical_glb`) into `tools/`.
 4. Not Started. Copy `psx_bake` and `contact_sheet` for textures.
 5. Not Started. Licence records folder and credits built from the manifests (`build_credits`).
