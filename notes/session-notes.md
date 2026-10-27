@@ -9,3 +9,5 @@ Open:
 - REA in MCP server mode, untested.
 - Tickora phase 1 (PRD section 11) not started.
 - Bunker: which game state toggles running variable update inside the fixed loop; and confirming by xref that the scene update is the fixed update handler (inferred so far).
+- Repo is public at github.com/fcarvajalbrown/Tickora with README, description and 10 topics (hosting, PRD open question 12, is answered).
+- License: Felipe says Tickora is proprietary for now, to discuss later; PRD.md still says MIT OR Apache-2.0 and has not been changed. The README carries no license section.
