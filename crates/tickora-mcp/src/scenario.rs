@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use serde_json::{Map, Value, json};
 use tickora_core::ecs::{Entity, FieldValue};
 
@@ -75,6 +78,11 @@ pub enum Expected {
     Literal(Value),
     Raw(Range),
     Approx { target: f64, tol: f64 },
+}
+
+pub fn load(path: &Path) -> Result<Scenario, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("cannot read file: {e}"))?;
+    parse(&text)
 }
 
 pub fn parse(text: &str) -> Result<Scenario, String> {
