@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--log-interval", type=float, default=300.0)
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--timeout-sec", type=int, default=30)
+    parser.add_argument("--retry-failed", action="store_true", help="Queue functions that failed in earlier runs.")
     parser.add_argument("--port", type=int, default=8000)
     return parser.parse_args()
 
@@ -248,7 +249,8 @@ async def main():
         await close_session(client, session)
 
     finished = run.state["done"]
-    pending = [f for f in functions if f["address"] not in finished and f["address"] not in run.state["failed"]]
+    skipped = {} if args.retry_failed else run.state["failed"]
+    pending = [f for f in functions if f["address"] not in finished and f["address"] not in skipped]
     queue = asyncio.Queue()
     for func in pending:
         queue.put_nowait(func)
