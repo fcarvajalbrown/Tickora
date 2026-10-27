@@ -746,6 +746,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tickora-core",
+ "tickora-render",
 ]
 
 [[package]]
