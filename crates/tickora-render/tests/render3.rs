@@ -1,0 +1,127 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use tickora_render::{
+    AdapterChoice, Image, Mesh, MeshInstance, PerspectiveCamera, Renderer, Rotator, Scene3,
+    ViewMode,
+};
+
+const BACKGROUND: [u8; 4] = [24, 24, 28, 255];
+const STONE: [u8; 4] = [120, 118, 112, 255];
+const RED: [u8; 4] = [255, 0, 0, 255];
+const WIDTH: u32 = 200;
+const HEIGHT: u32 = 100;
+
+fn renderer() -> Renderer {
+    let choice = AdapterChoice::from_env().unwrap();
+    Renderer::new(choice).unwrap_or_else(|e| panic!("no adapter for render tests: {e}"))
+}
+
+fn cube() -> Arc<Mesh> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/gen/render_fixtures/meshes/cube.glb");
+    Arc::new(Mesh::load(&path).unwrap())
+}
+
+fn eye() -> PerspectiveCamera {
+    PerspectiveCamera::new([0.0, 0.0, 50.0], Rotator::default(), 90.0).unwrap()
+}
+
+fn near_and_far(near_first: bool) -> Scene3 {
+    let cube = cube();
+    let near = MeshInstance::new(cube.clone(), [300.0, 0.0, 0.0]);
+    let mut far = MeshInstance::new(cube, [600.0, 0.0, 0.0]);
+    far.scale = 3.0;
+    far.color = Some([1.0, 0.0, 0.0, 1.0]);
+    let instances = if near_first {
+        vec![near, far]
+    } else {
+        vec![far, near]
+    };
+    Scene3 {
+        background: BACKGROUND,
+        instances,
+        camera: eye(),
+    }
+}
+
+fn pixel_at(image: &Image, ndc_x: f64, ndc_y: f64) -> [u8; 4] {
+    let x = ((ndc_x + 1.0) / 2.0 * f64::from(image.width)) as u32;
+    let y = ((1.0 - ndc_y) / 2.0 * f64::from(image.height)) as u32;
+    image.pixel(x, y)
+}
+
+fn render(scene: &Scene3, view_mode: ViewMode) -> (Image, usize) {
+    renderer()
+        .render3(scene, &scene.camera, view_mode, WIDTH, HEIGHT)
+        .unwrap()
+}
+
+#[test]
+fn near_cube_hides_the_far_one() {
+    let (image, off_screen) = render(&near_and_far(true), ViewMode::Unlit);
+    assert_eq!(off_screen, 0);
+    assert_eq!(pixel_at(&image, 0.0, 0.05), STONE);
+    assert_eq!(pixel_at(&image, 0.27, 0.05), RED);
+    assert_eq!(pixel_at(&image, 0.8, 0.05), BACKGROUND);
+    assert_eq!(pixel_at(&image, 0.0, -0.9), BACKGROUND);
+}
+
+#[test]
+fn draw_order_does_not_change_the_frame() {
+    let (first, _) = render(&near_and_far(true), ViewMode::Unlit);
+    let (second, _) = render(&near_and_far(false), ViewMode::Unlit);
+    assert_eq!(first.pixel_hash(), second.pixel_hash());
+}
+
+#[test]
+fn wireframe_draws_edges_and_leaves_faces_open() {
+    let (unlit, _) = render(&near_and_far(true), ViewMode::Unlit);
+    let (wireframe, _) = render(&near_and_far(true), ViewMode::Wireframe);
+    let count = |image: &Image, color: [u8; 4]| {
+        (0..image.height)
+            .flat_map(|y| (0..image.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| image.pixel(x, y) == color)
+            .count()
+    };
+    let lines = count(&wireframe, STONE);
+    assert!(lines > 0, "no cube edges drawn");
+    assert!(lines < count(&unlit, STONE) / 2, "{lines} edge pixels");
+    assert_eq!(pixel_at(&wireframe, 0.1, -0.05), BACKGROUND);
+}
+
+#[test]
+fn counts_instances_behind_the_camera() {
+    let mut scene = near_and_far(true);
+    scene
+        .instances
+        .push(MeshInstance::new(cube(), [-500.0, 0.0, 0.0]));
+    let (_, off_screen) = render(&scene, ViewMode::Unlit);
+    assert_eq!(off_screen, 1);
+}
+
+#[test]
+fn rejects_sizes_out_of_range() {
+    let scene = near_and_far(true);
+    let renderer = renderer();
+    assert!(
+        renderer
+            .render3(&scene, &scene.camera, ViewMode::Unlit, 15, 64)
+            .is_err()
+    );
+}
+
+#[test]
+fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
+    let scene = |location: [f64; 3]| Scene3 {
+        background: BACKGROUND,
+        instances: vec![MeshInstance::new(cube(), location)],
+        camera: eye(),
+    };
+    let (right, _) = render(&scene([300.0, 200.0, 0.0]), ViewMode::Unlit);
+    assert_eq!(pixel_at(&right, 0.8, 0.0), STONE);
+    assert_eq!(pixel_at(&right, -0.8, 0.0), BACKGROUND);
+    let (up, _) = render(&scene([300.0, 0.0, 150.0]), ViewMode::Unlit);
+    assert_eq!(pixel_at(&up, 0.0, 0.9), STONE);
+    assert_eq!(pixel_at(&up, 0.0, -0.9), BACKGROUND);
+}

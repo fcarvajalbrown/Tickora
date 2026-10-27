@@ -3,15 +3,18 @@ use std::sync::mpsc;
 
 use wgpu::util::DeviceExt;
 
-use crate::camera::OrthoCamera;
+use crate::camera::{OrthoCamera, PerspectiveCamera};
 use crate::image::Image;
-use crate::scene::{Layout, PixelRect, Scene};
+use crate::scene::{Layout, PixelRect, Scene, ViewMode};
+use crate::scene3::{self, Batch, Scene3};
 use crate::{MAX_SIZE, MIN_SIZE};
 
 pub const ADAPTER_ENV: &str = "TICKORA_ADAPTER";
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const VERTEX_SIZE: u64 = 12;
+const FRAME_UNIFORM_SIZE: u64 = 64;
 
 const SHADER: &str = "
 struct Out {
@@ -29,6 +32,49 @@ fn fs(input: Out) -> @location(0) vec4<f32> {
     return input.color;
 }
 ";
+
+const MESH_SHADER: &str = "
+struct Frame {
+    view_projection: mat4x4<f32>,
+}
+
+@group(0) @binding(0) var<uniform> frame: Frame;
+
+struct Out {
+    @builtin(position) position: vec4<f32>,
+    @location(0) world: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) color: vec4<f32>,
+}
+
+@vertex
+fn vs(
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) color: vec4<f32>,
+) -> Out {
+    var out: Out;
+    out.position = frame.view_projection * vec4<f32>(position, 1.0);
+    out.world = position;
+    out.normal = normal;
+    out.uv = uv;
+    out.color = color;
+    return out;
+}
+
+@fragment
+fn fs_unlit(input: Out) -> @location(0) vec4<f32> {
+    return vec4<f32>(input.color.rgb, 1.0);
+}
+";
+
+struct MeshPipelines {
+    frame_layout: wgpu::BindGroupLayout,
+    triangles: wgpu::RenderPipeline,
+    lines: wgpu::RenderPipeline,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdapterChoice {
@@ -78,6 +124,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
+    mesh: MeshPipelines,
     info: AdapterInfo,
 }
 
@@ -111,10 +158,12 @@ impl Renderer {
         }))
         .map_err(|e| format!("adapter {} refused a device: {e}", info.name))?;
         let pipeline = pipeline(&device);
+        let mesh = mesh_pipelines(&device);
         Ok(Renderer {
             device,
             queue,
             pipeline,
+            mesh,
             info,
         })
     }
@@ -130,23 +179,112 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<(Image, Layout), String> {
-        for (name, size) in [("width", width), ("height", height)] {
-            if !(MIN_SIZE..=MAX_SIZE).contains(&size) {
-                return Err(format!("{name} must be from {MIN_SIZE} to {MAX_SIZE}"));
-            }
-        }
+        check_size(width, height)?;
         let layout = scene.layout(camera, width, height);
-        let image = self.draw(scene.background, &layout.rects, width, height)?;
+        let vertices = vertex_bytes(&layout.rects, width, height);
+        let vertex_buffer = (!vertices.is_empty()).then(|| {
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("tickora rects"),
+                    contents: &vertices,
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
+        });
+        let image = self.frame(scene.background, width, height, false, |pass| {
+            if let Some(buffer) = &vertex_buffer {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..(vertices.len() as u64 / VERTEX_SIZE) as u32, 0..1);
+            }
+        })?;
         Ok((image, layout))
     }
 
-    fn draw(
+    pub fn render3(
         &self,
-        background: [u8; 4],
-        rects: &[PixelRect],
+        scene: &Scene3,
+        camera: &PerspectiveCamera,
+        view_mode: ViewMode,
         width: u32,
         height: u32,
+    ) -> Result<(Image, usize), String> {
+        check_size(width, height)?;
+        let (batches, pipeline) = match view_mode {
+            ViewMode::Unlit => (scene.triangles(), &self.mesh.triangles),
+            ViewMode::Wireframe => (scene.lines(), &self.mesh.lines),
+        };
+        let uniforms: Vec<u8> = camera
+            .view_projection(width, height)
+            .column_major_f32()
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        let frame_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tickora frame uniforms"),
+                contents: &uniforms,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let frame_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("tickora frame uniforms"),
+            layout: &self.mesh.frame_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: frame_buffer.as_entire_binding(),
+            }],
+        });
+        let buffers: Vec<(&Batch, wgpu::Buffer)> = batches
+            .iter()
+            .map(|batch| {
+                let buffer = self
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("tickora mesh batch"),
+                        contents: &batch.vertices,
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                (batch, buffer)
+            })
+            .collect();
+        let image = self.frame(scene.background, width, height, true, |pass| {
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &frame_group, &[]);
+            for (batch, buffer) in &buffers {
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..batch.vertex_count(), 0..1);
+            }
+        })?;
+        Ok((image, scene.off_screen(camera, width, height)))
+    }
+
+    fn frame(
+        &self,
+        background: [u8; 4],
+        width: u32,
+        height: u32,
+        depth: bool,
+        record: impl FnOnce(&mut wgpu::RenderPass<'_>),
     ) -> Result<Image, String> {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let depth_view = depth.then(|| {
+            self.device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("tickora depth"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        });
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("tickora frame"),
             size: wgpu::Extent3d {
@@ -162,15 +300,6 @@ impl Renderer {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let vertices = vertex_bytes(rects, width, height);
-        let vertex_buffer = (!vertices.is_empty()).then(|| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("tickora rects"),
-                    contents: &vertices,
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
-        });
         let row_bytes = width * 4;
         let padded_row = row_bytes.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -197,16 +326,21 @@ impl Renderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                    wgpu::RenderPassDepthStencilAttachment {
+                        view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(0.0),
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    }
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if let Some(buffer) = &vertex_buffer {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..(vertices.len() as u64 / VERTEX_SIZE) as u32, 0..1);
-            }
+            record(&mut pass);
         }
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -253,6 +387,15 @@ impl Renderer {
         readback.unmap();
         Image::new(width, height, pixels)
     }
+}
+
+fn check_size(width: u32, height: u32) -> Result<(), String> {
+    for (name, size) in [("width", width), ("height", height)] {
+        if !(MIN_SIZE..=MAX_SIZE).contains(&size) {
+            return Err(format!("{name} must be from {MIN_SIZE} to {MAX_SIZE}"));
+        }
+    }
+    Ok(())
 }
 
 fn hardware(instance: &wgpu::Instance) -> Result<wgpu::Adapter, String> {
@@ -357,6 +500,83 @@ fn pipeline(device: &wgpu::Device) -> wgpu::RenderPipeline {
         multiview_mask: None,
         cache: None,
     })
+}
+
+fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("tickora meshes"),
+        source: wgpu::ShaderSource::Wgsl(MESH_SHADER.into()),
+    });
+    let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("tickora frame uniforms"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_SIZE),
+            },
+            count: None,
+        }],
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("tickora meshes"),
+        bind_group_layouts: &[Some(&frame_layout)],
+        ..Default::default()
+    });
+    let attributes = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Float32x3,
+        2 => Float32x2,
+        3 => Float32x4
+    ];
+    let build = |topology: wgpu::PrimitiveTopology, fragment: &str| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("tickora meshes"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: scene3::VERTEX_SIZE,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Greater),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some(fragment),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    MeshPipelines {
+        triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
+        lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
+        frame_layout,
+    }
 }
 
 #[cfg(test)]
