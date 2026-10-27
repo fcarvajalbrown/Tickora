@@ -26,7 +26,7 @@ Status: **Not Started**. Tools listed in `docs/research/demo-toolkit.md`; ADR 00
 3. Not Started. Copy `meshkit` and the mesh checks (`check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check`, `canonical_glb`) into `tools/`.
 4. Not Started. Copy `psx_bake` and `contact_sheet` for textures.
 5. Not Started. Licence records folder and credits built from the manifests (`build_credits`).
-6. Not Started. Python dependencies for the tools, approved by Felipe.
+6. Done. Python dependencies approved by Felipe and pinned in `tools/requirements.txt` (numpy 2.5.4, Pillow 12.3.0, soundfile 0.14.0, trimesh 5.1.1); repo `.venv` imports all four.
 
 ## Phase 6: grey-box 3D renderer, 0.6.0
 
