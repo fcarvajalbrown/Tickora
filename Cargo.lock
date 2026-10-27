@@ -737,11 +737,11 @@ dependencies = [
 
 [[package]]
 name = "tickora-core"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "tickora-mcp"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "tickora-render"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "png",
  "pollster",

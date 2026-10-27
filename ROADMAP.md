@@ -8,25 +8,14 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 
 ## Open items
 
-- Phase 5 is next: asset pipeline (0.5.0).
+- Phase 6 is next: grey-box 3D renderer (0.6.0).
 - Felipe decides: where the demo lives and the default host (phase 8).
 - Felipe decides: what counts as proof and whether CI runs it (phase 8).
 - Felipe decides: project name, license and release scope (phase 9).
 
-## Phases 1 to 4: core, MCP, scenarios, screenshots
+## Phases 1 to 5: core, MCP, scenarios, screenshots, asset pipeline
 
-Status: **Done** (0.1.0 to 0.4.0). Full text in the history.
-
-## Phase 5: asset pipeline, 0.5.0
-
-Status: **Not Started**. Tools listed in `docs/research/demo-toolkit.md`; ADR 0003.
-
-1. Done. CC0 texture fetchers (ambientCG, Poly Haven, Texture.ninja, `fetch_missing`, `fetch_cc0`) in `tools/`, manifest committed under `specs/`; 10 tests, live ambientCG fetch checked.
-2. Done. CC0 sound search and fetchers (BigSoundBank, Freesound CC0, Red Library, Commons, OpenGameArt) in `tools/cc0_audio/`, manifests under `specs/audio/`; live search and Freesound fetch checked.
-3. Done. `meshkit`, `interior_kit` and the mesh checks (`check_mesh`, `mesh_gate`, `uv_check`, `coplanar_check`, `canonical_glb`) in `tools/`; 45 tool tests; a probe tunnel piece built, gated and rendered with F3D.
-4. Done. `psx_bake` and `contact_sheet` in `tools/cc0_textures/`; 47 tool tests; the fetched ambientCG rock baked to a 64 px PSX texture and sheeted.
-5. Done. `docs/licences/` for non-CC0 records and `build_credits` (with `song_licences`); 67 tool tests; credits built from real ambientCG and Freesound manifests.
-6. Done. Python dependencies approved by Felipe and pinned in `tools/requirements.txt` (numpy 2.5.4, Pillow 12.3.0, soundfile 0.14.0, trimesh 5.1.1); repo `.venv` imports all four.
+Status: **Done** (0.1.0 to 0.5.0). Full text in the history.
 
 ## Phase 6: grey-box 3D renderer, 0.6.0
 

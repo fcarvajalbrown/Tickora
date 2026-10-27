@@ -4,6 +4,10 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 
 ## [Unreleased]
 
+## [0.5.0]
+
+Asset pipeline: CC0 sourcing with SHA-256 manifests, seeded mesh generators and checks, PSX texture bake, credits.
+
 ### Added
 
 - ADR 0002: every Tickora game targets first-person 3D, in the style of Frictional Games.
@@ -67,7 +71,8 @@ Deterministic simulation core with replay.
 - `Fx` Q32.32 fixed point (ADR 0001) and a sparse-set ECS with field introspection.
 - CI on Windows and Linux in debug and release.
 
-[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.1.0...v0.2.0
