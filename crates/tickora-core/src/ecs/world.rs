@@ -1,14 +1,15 @@
-use super::Component;
 use super::entity::{Entity, EntityAllocator};
 use super::store::{ErasedStore, SparseSet};
+use super::{Component, Fields};
 use crate::hash::StateHasher;
 use core::any::TypeId;
 use core::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EcsError {
     DeadEntity(Entity),
     NotRegistered(&'static str),
+    UnknownComponent(String),
 }
 
 impl fmt::Display for EcsError {
@@ -21,6 +22,7 @@ impl fmt::Display for EcsError {
                 entity.generation()
             ),
             EcsError::NotRegistered(name) => write!(f, "component {name} is not registered"),
+            EcsError::UnknownComponent(name) => write!(f, "unknown component {name}"),
         }
     }
 }
@@ -173,6 +175,39 @@ impl World {
             .collect()
     }
 
+    pub fn describe(&self, entity: Entity) -> Option<Vec<(&'static str, Fields)>> {
+        if !self.entities.is_alive(entity) {
+            return None;
+        }
+        Some(
+            self.stores
+                .iter()
+                .filter_map(|r| Some((r.store.name(), r.store.fields_of(entity.index())?)))
+                .collect(),
+        )
+    }
+
+    pub fn query_names(&self, names: &[&str]) -> Result<Vec<Entity>, EcsError> {
+        let mut stores = Vec::with_capacity(names.len());
+        for name in names {
+            let registered = self
+                .stores
+                .iter()
+                .find(|r| r.store.name() == *name)
+                .ok_or_else(|| EcsError::UnknownComponent((*name).to_string()))?;
+            stores.push(&registered.store);
+        }
+        let Some(smallest) = stores.iter().min_by_key(|store| store.len()) else {
+            return Ok(self.entities.iter().collect());
+        };
+        Ok(smallest
+            .indices()
+            .into_iter()
+            .filter(|&index| stores.iter().all(|store| store.has(index)))
+            .filter_map(|index| self.entities.live_at(index))
+            .collect())
+    }
+
     pub fn hash_into(&self, hasher: &mut StateHasher) {
         self.entities.hash_into(hasher);
         hasher.write_u64(self.stores.len() as u64);
@@ -206,6 +241,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ecs::FieldValue;
     use crate::fx::Fx;
 
     #[derive(Clone, Debug, PartialEq)]
@@ -221,6 +257,10 @@ mod tests {
             self.x.hash_into(hasher);
             self.y.hash_into(hasher);
         }
+
+        fn fields(&self) -> Fields {
+            vec![("x", FieldValue::Fx(self.x)), ("y", FieldValue::Fx(self.y))]
+        }
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -231,6 +271,10 @@ mod tests {
 
         fn hash_into(&self, hasher: &mut StateHasher) {
             hasher.write_i32(self.0);
+        }
+
+        fn fields(&self) -> Fields {
+            vec![("hp", FieldValue::Int(i64::from(self.0)))]
         }
     }
 
@@ -353,6 +397,37 @@ mod tests {
             .map(|(e, _, _)| e)
             .collect();
         assert_eq!(hits, vec![a, c]);
+    }
+
+    #[test]
+    fn describe_lists_present_components_in_registration_order() {
+        let mut world = world();
+        let e = world.spawn();
+        world.insert(e, Health(4)).unwrap();
+        world.insert(e, pos(1, 2)).unwrap();
+        let described = world.describe(e).unwrap();
+        let names: Vec<&str> = described.iter().map(|(name, _)| *name).collect();
+        assert_eq!(names, vec!["position", "health"]);
+        assert_eq!(described[1].1, vec![("hp", FieldValue::Int(4))]);
+        world.despawn(e);
+        assert!(world.describe(e).is_none());
+    }
+
+    #[test]
+    fn query_names_intersects_and_rejects_unknown_names() {
+        let mut world = world();
+        let a = world.spawn();
+        let b = world.spawn();
+        world.insert(a, Health(1)).unwrap();
+        world.insert(a, pos(0, 0)).unwrap();
+        world.insert(b, Health(2)).unwrap();
+        assert_eq!(world.query_names(&["health", "position"]), Ok(vec![a]));
+        assert_eq!(world.query_names(&["health"]), Ok(vec![a, b]));
+        assert_eq!(world.query_names(&[]), Ok(vec![a, b]));
+        assert_eq!(
+            world.query_names(&["ghost"]),
+            Err(EcsError::UnknownComponent("ghost".to_string()))
+        );
     }
 
     #[test]

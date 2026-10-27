@@ -1,4 +1,4 @@
-use super::Component;
+use super::{Component, Fields};
 use crate::hash::StateHasher;
 use core::any::Any;
 
@@ -8,6 +8,9 @@ pub trait ErasedStore: Any {
     fn name(&self) -> &'static str;
     fn len(&self) -> usize;
     fn remove_entity(&mut self, index: u32);
+    fn has(&self, index: u32) -> bool;
+    fn indices(&self) -> Vec<u32>;
+    fn fields_of(&self, index: u32) -> Option<Fields>;
     fn hash_into(&self, hasher: &mut StateHasher);
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -110,6 +113,18 @@ impl<T: Component> ErasedStore for SparseSet<T> {
 
     fn remove_entity(&mut self, index: u32) {
         self.remove(index);
+    }
+
+    fn has(&self, index: u32) -> bool {
+        self.contains(index)
+    }
+
+    fn indices(&self) -> Vec<u32> {
+        self.entities.clone()
+    }
+
+    fn fields_of(&self, index: u32) -> Option<Fields> {
+        self.get(index).map(Component::fields)
     }
 
     fn hash_into(&self, hasher: &mut StateHasher) {

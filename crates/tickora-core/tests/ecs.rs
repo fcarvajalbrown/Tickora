@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use tickora_core::ecs::{Component, Entity, World};
+use tickora_core::ecs::{Component, Entity, FieldValue, Fields, World};
 use tickora_core::fx::Fx;
 use tickora_core::hash::StateHasher;
 use tickora_core::input::{InputCodec, InputEvent, InputLog};
@@ -28,6 +28,10 @@ impl Component for Position {
         self.x.hash_into(hasher);
         self.y.hash_into(hasher);
     }
+
+    fn fields(&self) -> Fields {
+        vec![("x", FieldValue::Fx(self.x)), ("y", FieldValue::Fx(self.y))]
+    }
 }
 
 impl Component for Velocity {
@@ -37,6 +41,10 @@ impl Component for Velocity {
         self.x.hash_into(hasher);
         self.y.hash_into(hasher);
     }
+
+    fn fields(&self) -> Fields {
+        vec![("x", FieldValue::Fx(self.x)), ("y", FieldValue::Fx(self.y))]
+    }
 }
 
 impl Component for Health {
@@ -44,6 +52,10 @@ impl Component for Health {
 
     fn hash_into(&self, hasher: &mut StateHasher) {
         hasher.write_i32(self.0);
+    }
+
+    fn fields(&self) -> Fields {
+        vec![("hp", FieldValue::Int(i64::from(self.0)))]
     }
 }
 
