@@ -8,7 +8,7 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 
 ## Open items
 
-- Phase 6 is next: grey-box 3D renderer (0.6.0).
+- Phase 6 in progress: grey-box 3D renderer (0.6.0).
 - Felipe decides: where the demo lives and the default host (phase 8).
 - Felipe decides: what counts as proof and whether CI runs it (phase 8).
 - Felipe decides: project name, license and release scope (phase 9).
@@ -19,9 +19,9 @@ Status: **Done** (0.1.0 to 0.5.0). Full text in the history.
 
 ## Phase 6: grey-box 3D renderer, 0.6.0
 
-Status: **Not Started**. ADRs 0002 and 0003.
+Status: **In Progress**. ADRs 0002 and 0003.
 
-1. Not Started. GLB reader dependency, approved by Felipe.
+1. Done. GLB reader dependency, approved by Felipe: `gltf =1.4.1` (MIT OR Apache-2.0), default features off, only `utils` and `names`.
 2. Not Started. `perspective` viewport (Unreal `ELevelViewportType`) and an eye-height camera string.
 3. Not Started. Depth buffer and mesh drawing.
 4. Not Started. Textures from the PSX bake.
