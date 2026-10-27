@@ -10,6 +10,9 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - ADR 0003: grey-box 3D first, with meshes and textures from generators.
 - `ROADMAP.md`, `docs/ROADMAP-HISTORY.md` and this changelog.
 - `docs/research/demo-toolkit.md`: the tools available for the coal-mine demo.
+- ADR 0004: assets in plain git without LFS; `.gitattributes` with binary, diff and generated attributes.
+- Pinned Python dependencies for the asset tools in `tools/requirements.txt`.
+- CC0 texture fetchers for ambientCG, Poly Haven and Texture.ninja, `fetch_missing` and `fetch_cc0`, with a `--manifest` option that writes the SHA-256 record under `specs/`.
 
 ### Changed
 
