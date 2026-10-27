@@ -48,7 +48,7 @@ Should and Could: not yet prioritized.
 
 Demo hook: an agent builds a small game and proves it, with no editor.
 
-Genre focus: games in the style of Frictional Games (Amnesia, SOMA): systemic horror without combat, where light, noise and scarce resources drive the tension. The phase 5 demo is a top-down survival game in that style, set in a fictional abandoned coal mine inspired by Chile's closed southern mines.
+Genre focus: games in the style of Frictional Games (Amnesia, SOMA): systemic horror without combat, where light, noise and scarce resources drive the tension. Frictional games are first-person 3D, so Tickora targets first-person 3D games and the demo is 3D, never a 2D or top-down substitute. The phase 5 demo is a first-person survival game in that style, set in a fictional abandoned coal mine inspired by Chile's closed southern mines.
 
 ## 6. Technical Architecture
 

@@ -6,6 +6,10 @@ Read `PRD.md` first.
 
 - Hard rule: copy from Unreal Engine anything that can be transported and does not collide with the PRD's original mission. When a feature has an Unreal counterpart (camera, viewports, screenshots, automation tests, naming), start from how Unreal does it.
 
+## Genre: Frictional-style, first-person 3D
+
+- Hard rule: Tickora is for games in the style of Frictional Games (Amnesia, SOMA), which are first-person 3D. Every game, demo and renderer decision assumes first-person 3D; never propose 2D or top-down as the game's view. A top-down view is only a debug view.
+
 ## Binary research
 
 - `research-private/` is git-ignored and never committed, pushed or published. It holds engine executables and DLLs copied from games Felipe owns, never game assets, plus notes and analysis output.
