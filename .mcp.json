@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "tickora": {
+      "type": "stdio",
+      "command": "cargo",
+      "args": [
+        "run",
+        "-q",
+        "--release",
+        "-p",
+        "tickora-mcp"
+      ],
+      "env": {}
+    }
+  }
+}
