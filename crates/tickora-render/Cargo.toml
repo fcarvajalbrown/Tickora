@@ -6,6 +6,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+gltf = { version = "=1.4.1", default-features = false, features = ["names", "utils"] }
 png = "0.18.1"
 pollster = "1.0.1"
 tickora-core = { version = "0.5.0", path = "../tickora-core" }

@@ -1,0 +1,55 @@
+{
+ "meshes": {
+  "cube": {
+   "collision": "none",
+   "files": [
+    "meshes/cube.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "stone"
+   ],
+   "name": "cube",
+   "piece": "cube",
+   "triangles": 12
+  },
+  "floor": {
+   "collision": "none",
+   "files": [
+    "meshes/floor.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "dirt"
+   ],
+   "name": "floor",
+   "piece": "floor",
+   "triangles": 12
+  },
+  "marker": {
+   "collision": "none",
+   "files": [
+    "meshes/marker.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "metal",
+    "wall"
+   ],
+   "name": "marker",
+   "piece": "marker",
+   "triangles": 24
+  }
+ },
+ "pieces": {
+  "cube": [
+   "cube"
+  ],
+  "floor": [
+   "floor"
+  ],
+  "marker": [
+   "marker"
+  ]
+ }
+}
