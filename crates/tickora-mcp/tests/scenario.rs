@@ -144,6 +144,51 @@ fn wav_writes_the_whole_run_and_replays_to_the_pinned_audio_hash() {
 }
 
 #[test]
+fn listen_and_sheet_hear_the_whole_run_in_the_same_pass_as_the_wav() {
+    let id = std::process::id();
+    let wav = std::env::temp_dir().join(format!("tickora-hear-{id}.wav"));
+    let sheet = std::env::temp_dir().join(format!("tickora-hear-{id}.png"));
+    let (code, out) = cli(&[Path::new("--listen"), &arena_file()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains(
+        ": 10.0 s (600 ticks from tick 0), 48000 Hz, 2 ch, PCM_24
+"
+    ));
+    assert!(out.contains(
+        "  sounds: 16 events
+    tick      0  spawn take 0 starts: "
+    ));
+
+    let (code, out) = cli(&[
+        Path::new("--json"),
+        Path::new("--wav"),
+        &wav,
+        Path::new("--sheet"),
+        &sheet,
+        &arena_file(),
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let reports: Value = serde_json::from_str(&out).unwrap();
+    let hearing = &reports[0]["hearing"];
+    assert_eq!(hearing["analysis"]["ticks"], 600);
+    assert_eq!(hearing["sounds"].as_array().unwrap().len(), 16);
+    assert!(hearing["reading"].as_str().unwrap().contains("  timeline:"));
+    assert_eq!(reports[0]["sheet"], sheet.to_str().unwrap());
+    let png = fs::read(&sheet).unwrap();
+    let bytes = fs::read(&wav).unwrap();
+    fs::remove_file(&sheet).unwrap();
+    fs::remove_file(&wav).unwrap();
+    assert_eq!(&png[1..4], b"PNG");
+    assert_eq!(bytes.len(), 44 + 600 * 800 * 6);
+
+    let failing = scenarios_dir().join("arena-wrong-expectations.fail.json");
+    let (code, _) = cli(&[Path::new("--listen"), &arena_file(), &failing]);
+    assert_eq!(code, 2);
+    let (code, _) = cli(&[&arena_file(), Path::new("--sheet")]);
+    assert_eq!(code, 2);
+}
+
+#[test]
 fn the_mcp_tool_runs_a_scenario_file_by_path() {
     let mut host = ArenaHost::new(0);
     let params = json!({

@@ -6,10 +6,11 @@ use std::process::ExitCode;
 
 use serde_json::{Value, json};
 use tickora_mcp::demo::ArenaHost;
+use tickora_mcp::hearing::{self, Hearing};
 use tickora_mcp::scenario::{self, Record, Report};
 use tickora_mcp::{Host, Server};
 
-const USAGE: &str = "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] [--wav <path>] <file>...]";
+const USAGE: &str = "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] [--wav <path>] [--listen] [--sheet <path>] <file>...]";
 const MALFORMED: u8 = 2;
 
 fn main() -> ExitCode {
@@ -35,8 +36,11 @@ fn serve() -> ExitCode {
 }
 
 fn scenarios(args: &[String]) -> ExitCode {
-    let flags = ["--json", "--record", "--record-alternative"];
-    let (wav, args) = match split_wav(args) {
+    let flags = ["--json", "--record", "--record-alternative", "--listen"];
+    let split = split_value(args, "--wav").and_then(|(wav, rest)| {
+        split_value(&rest, "--sheet").map(|(sheet, rest)| (wav, sheet, rest))
+    });
+    let (wav, sheet, args) = match split {
         Ok(split) => split,
         Err(message) => {
             eprintln!("{message}; {USAGE}");
@@ -46,6 +50,11 @@ fn scenarios(args: &[String]) -> ExitCode {
     let args = &args[..];
     let has = |flag: &str| args.iter().any(|arg| arg == flag);
     let as_json = has("--json");
+    let extras = Extras {
+        wav,
+        sheet,
+        listen: has("--listen"),
+    };
     let record = match (has("--record"), has("--record-alternative")) {
         (false, false) => Record::Off,
         (true, false) => Record::Replace,
@@ -70,8 +79,8 @@ fn scenarios(args: &[String]) -> ExitCode {
         eprintln!("no scenario files given; {USAGE}");
         return ExitCode::from(MALFORMED);
     }
-    if wav.is_some() && files.len() > 1 {
-        eprintln!("--wav takes one scenario file; {USAGE}");
+    if extras.any() && files.len() > 1 {
+        eprintln!("--wav, --listen and --sheet take one scenario file; {USAGE}");
         return ExitCode::from(MALFORMED);
     }
     let mut worst = 0;
@@ -80,22 +89,25 @@ fn scenarios(args: &[String]) -> ExitCode {
         let mut host = ArenaHost::new(0);
         let outcome = scenario::load(Path::new(file))
             .and_then(|scenario| scenario::run_recording(&mut host, &scenario, record))
-            .and_then(|report| match &wav {
-                Some(path) => write_wav(&host, path).map(|()| report),
-                None => Ok(report),
-            });
+            .and_then(|report| extras.finish(&host, file).map(|heard| (report, heard)));
         let code = match &outcome {
-            Ok(report) if report.passed => 0,
+            Ok((report, _)) if report.passed => 0,
             Ok(_) => 1,
             Err(_) => MALFORMED,
         };
         worst = worst.max(code);
         if as_json {
             reports.push(match outcome {
-                Ok(report) => {
+                Ok((report, heard)) => {
                     let mut entry = json!({ "file": file, "report": report.to_json() });
-                    if let Some(path) = &wav {
+                    if let Some(path) = &extras.wav {
                         entry["wav"] = json!(path);
+                    }
+                    if let Some(path) = &extras.sheet {
+                        entry["sheet"] = json!(path);
+                    }
+                    if let Some(heard) = heard {
+                        entry["hearing"] = heard.to_json();
                     }
                     entry
                 }
@@ -103,11 +115,14 @@ fn scenarios(args: &[String]) -> ExitCode {
             });
         } else {
             match outcome {
-                Ok(report) => {
-                    if let Some(path) = &wav {
+                Ok((report, heard)) => {
+                    for path in [&extras.wav, &extras.sheet].into_iter().flatten() {
                         println!("WROTE {path}");
                     }
-                    print_report(file, &report)
+                    print_report(file, &report);
+                    if let Some(heard) = heard.filter(|_| extras.listen) {
+                        println!("{}", heard.text());
+                    }
                 }
                 Err(error) => println!("ERROR {file}: {error}"),
             }
@@ -119,37 +134,72 @@ fn scenarios(args: &[String]) -> ExitCode {
     ExitCode::from(worst)
 }
 
-fn split_wav(args: &[String]) -> Result<(Option<String>, Vec<String>), String> {
-    let mut wav = None;
+fn split_value(args: &[String], flag: &str) -> Result<(Option<String>, Vec<String>), String> {
+    let mut value = None;
     let mut rest = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
-        if arg != "--wav" {
+        if arg != flag {
             rest.push(arg.clone());
             continue;
         }
         let path = args
             .next()
             .filter(|path| !path.starts_with("--"))
-            .ok_or("--wav needs a path")?;
-        if wav.replace(path.clone()).is_some() {
-            return Err("--wav is given twice".to_string());
+            .ok_or(format!("{flag} needs a path"))?;
+        if value.replace(path.clone()).is_some() {
+            return Err(format!("{flag} is given twice"));
         }
     }
-    Ok((wav, rest))
+    Ok((value, rest))
 }
 
-fn write_wav(host: &ArenaHost, path: &str) -> Result<(), String> {
+struct Extras {
+    wav: Option<String>,
+    sheet: Option<String>,
+    listen: bool,
+}
+
+impl Extras {
+    fn any(&self) -> bool {
+        self.wav.is_some() || self.sheet.is_some() || self.listen
+    }
+
+    fn finish(&self, host: &ArenaHost, file: &str) -> Result<Option<Hearing>, String> {
+        let mut wav = match &self.wav {
+            Some(path) => Some(BufWriter::new(create(path)?)),
+            None => None,
+        };
+        let heard = if self.listen || self.sheet.is_some() {
+            let out = wav.as_mut().map(|out| out as &mut dyn Write);
+            Some(hearing::hear(host, 0, host.tick(), file, out)?)
+        } else {
+            if let Some(out) = wav.as_mut() {
+                tickora_mcp::host::write_wav(host, 0, host.tick(), out)?;
+            }
+            None
+        };
+        if let (Some(out), Some(path)) = (wav.as_mut(), &self.wav) {
+            out.flush()
+                .map_err(|e| format!("cannot write {path}: {e}"))?;
+        }
+        if let (Some(path), Some(heard)) = (&self.sheet, &heard) {
+            let image = heard.sheet.as_ref().ok_or_else(|| heard.reading.clone())?;
+            create(path)?
+                .write_all(&image.to_png()?)
+                .map_err(|e| format!("cannot write {path}: {e}"))?;
+        }
+        Ok(heard)
+    }
+}
+
+fn create(path: &str) -> Result<File, String> {
     let path = Path::new(path);
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
-    let file = File::create(path).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    let mut out = BufWriter::new(file);
-    tickora_mcp::host::write_wav(host, 0, host.tick(), &mut out)?;
-    out.flush()
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))
+    File::create(path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn print_report(file: &str, report: &Report) {

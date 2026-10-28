@@ -363,6 +363,7 @@ fn a_scenario_runs_on_a_fresh_sim_and_leaves_the_live_one_alone() {
 #[test]
 fn listen_measures_rendered_audio_and_writes_a_wav_without_stepping() {
     let path = std::env::temp_dir().join(format!("tickora-listen-{}.wav", std::process::id()));
+    let sheet = std::env::temp_dir().join(format!("tickora-listen-{}.png", std::process::id()));
     let mut script = Script::new(Era::Modern);
     script.call("tickora_listen", json!({}));
     script.call(
@@ -378,6 +379,15 @@ fn listen_measures_rendered_audio_and_writes_a_wav_without_stepping() {
     script.call("tickora_listen", json!({ "to": 4 }));
     script.call("tickora_listen", json!({ "from": 2, "to": 1 }));
     script.call("tickora_listen", json!({ "volume": 1 }));
+    script.call("tickora_listen", json!({ "describe": false }));
+    script.call(
+        "tickora_listen",
+        json!({ "sheet": sheet.to_str().unwrap() }),
+    );
+    script.call(
+        "tickora_listen",
+        json!({ "describe": false, "sheet": sheet.to_str().unwrap() }),
+    );
     let replies = script.run(4);
 
     let silent = structured(&replies[1]);
@@ -412,6 +422,41 @@ fn listen_measures_rendered_audio_and_writes_a_wav_without_stepping() {
     assert!(tool_error(&replies[6]).contains("past the 3 rendered ticks"));
     assert!(tool_error(&replies[7]).contains("backwards"));
     assert!(tool_error(&replies[8]).contains("unexpected argument"));
+
+    assert_eq!(silent["analysis"], Value::Null);
+    assert_eq!(silent["sounds"], json!([]));
+    assert_eq!(replies[1]["result"]["content"].as_array().unwrap().len(), 1);
+    let content = replies[3]["result"]["content"].as_array().unwrap();
+    assert_eq!(content[0]["type"], "image");
+    assert_eq!(content[0]["mimeType"], "image/png");
+    assert_eq!(heard["sounds"][0]["event"], "start");
+    assert_eq!(heard["sounds"][0]["sound"], "spawn");
+    assert_eq!(heard["sounds"][0]["tick"], 0);
+    assert_eq!(heard["sounds"][1]["reason"], "playing");
+    assert_eq!(heard["analysis"]["ticks"], 3);
+    assert!(
+        heard["reading"]
+            .as_str()
+            .unwrap()
+            .starts_with("seed 4: 0.05 s (3 ticks from tick 0), 48000 Hz, 2 ch, PCM_24")
+    );
+    assert!(heard["sheet_colours"]["spawn"].is_string());
+    assert!(
+        written["reading"]
+            .as_str()
+            .unwrap()
+            .contains("needs at least 3")
+    );
+
+    let plain = structured(&replies[9]);
+    assert!(plain.get("reading").is_none() && plain.get("sounds").is_none());
+    assert_eq!(replies[9]["result"]["content"].as_array().unwrap().len(), 1);
+    let sheeted = structured(&replies[10]);
+    assert_eq!(sheeted["sheet"], sheet.to_str().unwrap());
+    let png = std::fs::read(&sheet).unwrap();
+    std::fs::remove_file(&sheet).unwrap();
+    assert_eq!(&png[1..4], b"PNG");
+    assert!(tool_error(&replies[11]).contains("sheet needs describe"));
 }
 
 fn tool_error(reply: &Value) -> String {

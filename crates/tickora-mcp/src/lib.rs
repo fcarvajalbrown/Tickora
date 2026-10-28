@@ -1,5 +1,6 @@
 pub mod base64;
 pub mod demo;
+pub mod hearing;
 pub mod host;
 pub mod jsonrpc;
 pub mod scenario;

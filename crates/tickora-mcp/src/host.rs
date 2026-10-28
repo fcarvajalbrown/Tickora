@@ -34,7 +34,6 @@ pub trait Host {
 
     fn replay_audio(
         &self,
-        from: u64,
         to: u64,
         sink: &mut dyn FnMut(u64, &Block, &Mixer) -> Result<(), String>,
     ) -> Result<(), String>;
@@ -51,7 +50,10 @@ pub fn write_wav<H: Host + ?Sized>(
     let frames = (to - from) * u64::from(format.samples_per_tick());
     out.write_all(&wav::header(format.sample_rate(), frames)?)
         .map_err(|e| e.to_string())?;
-    host.replay_audio(from, to, &mut |_, block, _| {
+    host.replay_audio(to, &mut |tick, block, _| {
+        if tick < from {
+            return Ok(());
+        }
         wav::write_frames(out, &block.frames).map_err(|e| e.to_string())
     })
 }

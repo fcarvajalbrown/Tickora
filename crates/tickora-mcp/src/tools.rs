@@ -7,7 +7,7 @@ use tickora_render::{DEFAULT_SIZE, MAX_SIZE, MIN_SIZE};
 
 use crate::host::Host;
 use crate::jsonrpc::RpcError;
-use crate::{base64, scenario, shot};
+use crate::{base64, hearing, scenario, shot};
 
 pub const MAX_STEP_TICKS: u64 = 100_000;
 pub const DEFAULT_QUERY_LIMIT: u64 = 100;
@@ -92,11 +92,13 @@ pub fn definitions<H: Host>(host: &H) -> Value {
         ),
         tool(
             "tickora_listen",
-            "Measure the audio the live simulation has rendered, without stepping it. The host renders one block per tick offline: stereo, 24-bit, 48000 Hz, 800 samples per tick; the block for tick t is the sound of the step from t to t + 1. from and to are a half-open tick range, default 0 to the current tick. Returns the audio hash of the range as a decimal string, per-channel peak and RMS in dBFS (null for silence), clipped samples, the most voices active in any tick of the range, voices active in the last block and dropped voice starts. With path, the range is also written as a WAV, relative to the server's working directory, by replaying the recorded inputs.",
+            "Measure the audio the live simulation has rendered, without stepping it. The host renders one block per tick offline: stereo, 24-bit, 48000 Hz, 800 samples per tick; the block for tick t is the sound of the step from t to t + 1. from and to are a half-open tick range, default 0 to the current tick. Returns the audio hash of the range as a decimal string, per-channel peak and RMS in dBFS (null for silence), clipped samples, the most voices active in any tick of the range, voices active in the last block and dropped voice starts. With path, the range is also written as a WAV, relative to the server's working directory, by replaying the recorded inputs. describe (default true) replays the range once to hear it, at most 36000 ticks: sounds lists every voice start (tick, sound, take, origin, gain, pitch, distance_cm, gain_db left and right after attenuation and pan, submix), end (finished, stopped, or playing at the end of the range) and drop at the voice cap; analysis carries listen.py's measures (integrated LUFS, true peak, short-term range, clipping, DC offset, band shares, centroid, stereo, voice likeness, tones, transients with tick, timeline, loop seam); reading says it in plain words; analysis is null and the reading says why when the range is under 3 ticks; an image block shows a log-frequency spectrogram with short-term loudness and centroid strips, cyan transient marks along the top and a dashed line per sound start in the colour sheet_colours gives its name. With sheet, that PNG is also written there.",
             json!({
                 "from": { "type": "integer", "minimum": 0, "default": 0 },
                 "to": { "type": "integer", "minimum": 0, "description": "Default: the current tick." },
                 "path": { "type": "string" },
+                "describe": { "type": "boolean", "default": true },
+                "sheet": { "type": "string" },
             }),
             &[],
         ),
@@ -124,7 +126,7 @@ pub fn call<H: Host>(host: &mut H, params: &Map<String, Value>) -> Result<Value,
         "tickora_reset" => reset(host, args).map(plain),
         "tickora_run_scenario" => run_scenario(host, args).map(plain),
         "tickora_screenshot" => screenshot(host, args),
-        "tickora_listen" => listen(host, args).map(plain),
+        "tickora_listen" => listen(host, args),
         _ => return Err(RpcError::invalid_params(format!("unknown tool {name}"))),
     };
     Ok(match outcome {
@@ -313,25 +315,48 @@ fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), 
     Ok((structured, Some(image)))
 }
 
-fn listen<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
-    only(args, &["from", "to", "path"])?;
+fn create_parent(path: &Path) -> Result<(), String> {
+    match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(parent) => std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display())),
+        None => Ok(()),
+    }
+}
+
+fn listen<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), String> {
+    only(args, &["from", "to", "path", "describe", "sheet"])?;
     let from: u64 = typed(args, "from")?.unwrap_or(0);
     let to: u64 = typed(args, "to")?.unwrap_or(host.tick());
     let path: Option<String> = typed(args, "path")?;
+    let describe: bool = typed(args, "describe")?.unwrap_or(true);
+    let sheet: Option<String> = typed(args, "sheet")?;
+    if sheet.is_some() && !describe {
+        return Err("sheet needs describe".to_string());
+    }
     let capture = host.audio();
     let meters = capture.meters(from, to)?;
-    if let Some(path) = &path {
-        let path = Path::new(path);
-        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    let mut wav = match &path {
+        Some(path) => {
+            let path = Path::new(path);
+            create_parent(path)?;
+            let file = std::fs::File::create(path)
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+            Some(std::io::BufWriter::new(file))
         }
-        let file = std::fs::File::create(path)
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        let mut out = std::io::BufWriter::new(file);
-        crate::host::write_wav(host, from, to, &mut out)?;
-        std::io::Write::flush(&mut out)
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        None => None,
+    };
+    let heard = if describe {
+        let label = format!("seed {}", host.seed());
+        let out = wav.as_mut().map(|out| out as &mut dyn std::io::Write);
+        Some(hearing::hear(host, from, to, &label, out)?)
+    } else {
+        if let Some(out) = wav.as_mut() {
+            crate::host::write_wav(host, from, to, out)?;
+        }
+        None
+    };
+    if let (Some(out), Some(path)) = (wav.as_mut(), &path) {
+        std::io::Write::flush(out).map_err(|e| format!("cannot write {path}: {e}"))?;
     }
     let format = capture.format();
     let channel =
@@ -358,7 +383,27 @@ fn listen<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
     if let Some(path) = path {
         structured["path"] = json!(path);
     }
-    Ok(structured)
+    let Some(heard) = heard else {
+        return Ok((structured, None));
+    };
+    let png = match &heard.sheet {
+        Some(image) => Some(image.to_png()?),
+        None => None,
+    };
+    if let (Some(sheet), Some(png)) = (&sheet, &png) {
+        let target = Path::new(sheet);
+        create_parent(target)?;
+        std::fs::write(target, png)
+            .map_err(|e| format!("cannot write {}: {e}", target.display()))?;
+        structured["sheet"] = json!(sheet);
+    }
+    if let (Value::Object(into), Value::Object(described)) = (&mut structured, heard.to_json()) {
+        into.extend(described);
+    }
+    let image = png.map(
+        |png| json!({ "type": "image", "data": base64::encode(&png), "mimeType": "image/png" }),
+    );
+    Ok((structured, image))
 }
 
 fn entity_json(entity: Entity) -> Value {

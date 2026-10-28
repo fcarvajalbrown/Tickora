@@ -548,19 +548,16 @@ impl Host for ArenaHost {
 
     fn replay_audio(
         &self,
-        from: u64,
         to: u64,
         sink: &mut dyn FnMut(u64, &Block, &Mixer) -> Result<(), String>,
     ) -> Result<(), String> {
-        self.capture.range(from, to)?;
+        self.capture.range(0, to)?;
         let mut runner = Runner::new(Arena::new(self.seed), self.seed);
         let mut mixer = arena_mixer();
         for tick in 0..to {
             runner.step(&self.log);
             let block = mixer.render(runner.sim().world());
-            if tick >= from {
-                sink(tick, &block, &mixer)?;
-            }
+            sink(tick, &block, &mixer)?;
         }
         Ok(())
     }
@@ -690,7 +687,7 @@ mod tests {
             .unwrap();
         host.step(&[]).unwrap();
         let mut starts = Vec::new();
-        host.replay_audio(0, 3, &mut |tick, block, mixer| {
+        host.replay_audio(3, &mut |tick, block, mixer| {
             for event in &block.events {
                 if let tickora_audio::VoiceEvent::Start(start) = event {
                     let name = mixer.bank().name(start.sound).unwrap().to_string();
