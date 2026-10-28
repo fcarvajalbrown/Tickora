@@ -22,6 +22,14 @@ The arena's two synthetic sounds become real ones: `hit` becomes a few CC0 impac
 - Keel's README and `meters.py`: BS.1770-4 through pyloudnorm, `short_term_lufs_max(audio, rate, window_s, hop_s)`.
 - Spatial audio: Tickora's `Source::Pcm` is one channel, panned and attenuated per voice from the listener, so 3D sounds are baked mono.
 
+## Finding during the build: transient hits and -18 LUFS
+
+Ten CC0 punch and body-hit candidates measured with Keel's meter, cut to one blow: with the sample peak at -1 dBFS, nine reach only -23.1 to -31.9 LUFS momentary max, and only Freesound 276600 reaches -17.4. Punches put their energy into 17 to 74 ms, which a 0.4 s window averages thin. Raising them to -18 would push the peak to +11.5 dBFS.
+
+Web check: game loudness guidance measures the whole mix over long play (IESD "over a minimum of 30 minutes of representative gameplay", designingsound.org "Loudness in game audio"); BS.1770 meters are reported to fail on short one-shots (Steinberg forum, "Loudness Meta Normalizer solutions for short files"); the common practice is to normalise per file and set relative volume in data (gamedev.net "volume and normalization for sfx"). Unreal has no confirmed built-in LUFS normaliser; Fab's Audio Normalizer changes only an asset's output volume.
+
+Decision (Felipe): the takes of one transient sound share one level, set by `trim_db`, the loudest that the quietest picked take reaches with its peak at -1 dBFS. The recordings are not soft-clipped or reshaped. Sustained sounds keep -18 LUFS.
+
 ## Credits rule (Corpofobia's `.claude/rules/assets-and-credits.md`)
 
 - CC0 and public domain from shared hosts (Freesound, archive.org, OpenGameArt, Wikimedia Commons) are never credited.
