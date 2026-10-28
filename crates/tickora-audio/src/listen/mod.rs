@@ -1,8 +1,14 @@
+pub mod analysis;
 pub mod fft;
 pub mod filter;
 pub mod loudness;
+pub mod onsets;
+pub mod seam;
 pub mod spectrum;
 pub mod stats;
+pub mod tones;
+pub mod voice;
+pub mod words;
 
 use crate::format::FULL_SCALE;
 

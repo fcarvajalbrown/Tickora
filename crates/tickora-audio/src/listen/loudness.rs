@@ -1,4 +1,3 @@
-use super::Audio;
 use super::filter::{k_weight, upsampled_peak, upsampling_filter};
 use super::stats::power_mean_db;
 
@@ -7,19 +6,18 @@ pub struct Blocks {
     pub levels: Vec<f64>,
 }
 
-pub fn block_loudness(audio: &Audio, window_s: f64, hop_s: f64) -> Blocks {
-    let rate = f64::from(audio.rate);
+pub fn block_loudness(channels: &[Vec<f64>], rate: u32, window_s: f64, hop_s: f64) -> Blocks {
+    let rate = f64::from(rate);
     let window = (window_s * rate) as usize;
     let hop = ((hop_s * rate) as usize).max(1);
-    let length = audio.len();
+    let length = channels.first().map_or(0, Vec::len);
     if length < window || window == 0 {
         return Blocks {
             times: Vec::new(),
             levels: Vec::new(),
         };
     }
-    let cumulative: Vec<Vec<f64>> = audio
-        .channels
+    let cumulative: Vec<Vec<f64>> = channels
         .iter()
         .map(|channel| {
             let mut sums = Vec::with_capacity(length + 1);
@@ -49,8 +47,8 @@ pub fn block_loudness(audio: &Audio, window_s: f64, hop_s: f64) -> Blocks {
     }
 }
 
-pub fn integrated(audio: &Audio) -> Option<f64> {
-    let blocks: Vec<f64> = block_loudness(audio, 0.4, 0.1)
+pub fn integrated(channels: &[Vec<f64>], rate: u32) -> Option<f64> {
+    let blocks: Vec<f64> = block_loudness(channels, rate, 0.4, 0.1)
         .levels
         .into_iter()
         .filter(|level| *level > -70.0)
@@ -66,10 +64,9 @@ pub fn integrated(audio: &Audio) -> Option<f64> {
     Some(power_mean_db(&gated))
 }
 
-pub fn true_peak(audio: &Audio) -> f64 {
+pub fn true_peak(channels: &[Vec<f64>]) -> f64 {
     let h = upsampling_filter(4);
-    let peak = audio
-        .channels
+    let peak = channels
         .iter()
         .map(|channel| upsampled_peak(channel, 4, &h))
         .fold(0.0, f64::max);
@@ -79,6 +76,7 @@ pub fn true_peak(audio: &Audio) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::listen::Audio;
     use std::f64::consts::PI;
 
     fn sine(hz: f64, amplitude: f64, seconds: f64) -> Audio {
@@ -92,24 +90,24 @@ mod tests {
     #[test]
     fn a_1_khz_sine_at_minus_20_dbfs_reads_as_listen_py_does() {
         let audio = sine(1000.0, 0.1, 3.0);
-        assert!((integrated(&audio).unwrap() + 20.2529).abs() < 0.001);
-        assert!((true_peak(&audio) + 19.9945).abs() < 0.001);
+        assert!((integrated(&audio.channels, audio.rate).unwrap() + 20.2529).abs() < 0.001);
+        assert!((true_peak(&audio.channels) + 19.9945).abs() < 0.001);
     }
 
     #[test]
     fn silence_has_no_integrated_loudness() {
         let audio = sine(1000.0, 0.0, 1.0);
-        assert_eq!(integrated(&audio), None);
-        assert_eq!(true_peak(&audio), -240.0);
+        assert_eq!(integrated(&audio.channels, audio.rate), None);
+        assert_eq!(true_peak(&audio.channels), -240.0);
     }
 
     #[test]
     fn blocks_step_by_the_hop() {
-        let blocks = block_loudness(&sine(1000.0, 0.1, 1.0), 0.4, 0.1);
+        let blocks = block_loudness(&sine(1000.0, 0.1, 1.0).channels, 48_000, 0.4, 0.1);
         assert_eq!(blocks.times.len(), 7);
         assert!((blocks.times[6] - 0.6).abs() < 1e-12);
         assert!(
-            block_loudness(&sine(1000.0, 0.1, 0.3), 0.4, 0.1)
+            block_loudness(&sine(1000.0, 0.1, 0.3).channels, 48_000, 0.4, 0.1)
                 .levels
                 .is_empty()
         );
