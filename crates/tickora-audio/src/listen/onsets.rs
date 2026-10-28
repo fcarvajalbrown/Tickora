@@ -1,3 +1,4 @@
+use super::Clock;
 use super::fft::Fft;
 use super::spectrum::{BANDS, band_sum};
 use super::stats::{median, percentile, round_to};
@@ -8,6 +9,7 @@ const BACKGROUND_FRAMES: usize = 30;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Onset {
     pub time_s: f64,
+    pub tick: u64,
     pub rise_db: f64,
     pub length_ms: i64,
     pub band: &'static str,
@@ -52,7 +54,13 @@ pub fn band_of(mono: &[f64], rate: u32, start_s: f64) -> &'static str {
     best.0
 }
 
-pub fn onsets(mono: &[f64], rate: u32, rise_db: f64, limit: usize) -> (Vec<Onset>, usize) {
+pub fn onsets(
+    mono: &[f64],
+    rate: u32,
+    clock: Clock,
+    rise_db: f64,
+    limit: usize,
+) -> (Vec<Onset>, usize) {
     let levels = frame_levels(mono, rate);
     let mut found = Vec::new();
     if levels.is_empty() {
@@ -79,6 +87,7 @@ pub fn onsets(mono: &[f64], rate: u32, rise_db: f64, limit: usize) -> (Vec<Onset
             let length_ms = ((end - index) * 10) as i64;
             found.push(Onset {
                 time_s: round_to(start_s, 2),
+                tick: clock.tick_at(start_s),
                 rise_db: round_to(levels[peak] - background, 1),
                 length_ms,
                 band,
@@ -117,7 +126,13 @@ mod tests {
 
     #[test]
     fn bursts_are_found_where_they_start_with_their_band() {
-        let (found, total) = onsets(&clicks(&[0.8, 1.6, 2.4], 1000.0), 48_000, 10.0, 15);
+        let (found, total) = onsets(
+            &clicks(&[0.8, 1.6, 2.4], 1000.0),
+            48_000,
+            Clock::default(),
+            10.0,
+            15,
+        );
         assert_eq!(total, 3);
         let times: Vec<f64> = found.iter().map(|onset| onset.time_s).collect();
         assert_eq!(times, vec![0.8, 1.6, 2.4]);
@@ -132,7 +147,13 @@ mod tests {
 
     #[test]
     fn the_limit_keeps_the_loudest_in_time_order() {
-        let (found, total) = onsets(&clicks(&[0.8, 1.6, 2.4], 100.0), 48_000, 10.0, 2);
+        let (found, total) = onsets(
+            &clicks(&[0.8, 1.6, 2.4], 100.0),
+            48_000,
+            Clock::default(),
+            10.0,
+            2,
+        );
         assert_eq!((found.len(), total), (2, 3));
         assert!(found[0].time_s < found[1].time_s);
         assert_eq!(found[0].band, "low");

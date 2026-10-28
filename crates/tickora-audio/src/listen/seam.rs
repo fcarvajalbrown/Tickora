@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
+use super::Clock;
 use super::fft::Fft;
 use super::stats::round_to;
 
@@ -14,6 +15,8 @@ pub struct Seam {
 pub struct LoopCandidate {
     pub start_s: f64,
     pub end_s: f64,
+    pub start_tick: u64,
+    pub end_tick: u64,
     pub seam: Seam,
 }
 
@@ -111,7 +114,13 @@ impl<'a> SeamProbe<'a> {
     }
 }
 
-pub fn loop_search(mono: &[f64], rate: u32, min_s: f64, max_s: f64) -> Vec<LoopCandidate> {
+pub fn loop_search(
+    mono: &[f64],
+    rate: u32,
+    clock: Clock,
+    min_s: f64,
+    max_s: f64,
+) -> Vec<LoopCandidate> {
     let duration = mono.len() as f64 / f64::from(rate);
     let steps = ((duration - 0.2 - 0.2) / 0.25).ceil().max(0.0) as usize;
     let grid: Vec<f64> = (0..steps).map(|i| 0.2 + i as f64 * 0.25).collect();
@@ -138,6 +147,8 @@ pub fn loop_search(mono: &[f64], rate: u32, min_s: f64, max_s: f64) -> Vec<LoopC
             picked.push(LoopCandidate {
                 start_s: round_to(start, 2),
                 end_s: round_to(end, 2),
+                start_tick: clock.tick_at(start),
+                end_tick: clock.tick_at(end),
                 seam,
             });
         }
@@ -184,7 +195,7 @@ mod tests {
     #[test]
     fn loop_candidates_sit_inside_the_length_range() {
         let mono = tone(6.0);
-        let found = loop_search(&mono, 48_000, 1.0, 2.0);
+        let found = loop_search(&mono, 48_000, Clock::default(), 1.0, 2.0);
         assert_eq!(found.len(), 3);
         for candidate in found {
             let length = candidate.end_s - candidate.start_s;

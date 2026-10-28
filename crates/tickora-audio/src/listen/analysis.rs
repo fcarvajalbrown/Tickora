@@ -1,4 +1,3 @@
-use super::Audio;
 use super::loudness::{block_loudness, integrated, true_peak};
 use super::onsets::{Onset, onsets};
 use super::seam::{LoopCandidate, Seam, SeamProbe, loop_search};
@@ -7,6 +6,7 @@ use super::stats::{mean, median, percentile, power_mean_db, round_to};
 use super::tones::{Tone, tones};
 use super::voice::voice_likeness;
 use super::words::{colour, steadiness, texture, width};
+use super::{Audio, Clock};
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -14,6 +14,7 @@ pub struct Settings {
     pub event_db: f64,
     pub max_events: usize,
     pub loop_search: Option<(f64, f64)>,
+    pub clock: Clock,
 }
 
 impl Default for Settings {
@@ -23,6 +24,7 @@ impl Default for Settings {
             event_db: 10.0,
             max_events: 15,
             loop_search: None,
+            clock: Clock::default(),
         }
     }
 }
@@ -46,6 +48,8 @@ pub struct Stereo {
 pub struct Segment {
     pub from_s: f64,
     pub to_s: f64,
+    pub from_tick: u64,
+    pub to_tick: u64,
     pub loudness_lufs: f64,
     pub swing_db: f64,
     pub centroid_hz: f64,
@@ -56,6 +60,8 @@ pub struct Segment {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Analysis {
     pub duration_s: f64,
+    pub first_tick: u64,
+    pub ticks: u64,
     pub rate: u32,
     pub integrated_lufs: Option<f64>,
     pub true_peak_dbtp: f64,
@@ -157,7 +163,13 @@ pub fn analyse(audio: &Audio, settings: &Settings) -> Result<Analysis, String> {
         percentile(&short_term, 90.0) - percentile(&short_term, 10.0)
     };
     let overall_centroid = median(&centres);
-    let (events, event_count) = onsets(&mono, rate, settings.event_db, settings.max_events);
+    let (events, event_count) = onsets(
+        &mono,
+        rate,
+        settings.clock,
+        settings.event_db,
+        settings.max_events,
+    );
     let tone_list = tones(&spectrum);
     let tonal = tone_list.iter().any(|tone| tone.above_noise_db >= 15.0);
     let duration = audio.duration();
@@ -195,6 +207,8 @@ pub fn analyse(audio: &Audio, settings: &Settings) -> Result<Analysis, String> {
             Some(Segment {
                 from_s: round_to(start, 1),
                 to_s: round_to(end, 1),
+                from_tick: settings.clock.tick_at(start),
+                to_tick: settings.clock.tick_at(end),
                 loudness_lufs: round_to(power_mean_db(&level), 1),
                 swing_db: round_to(spread, 1),
                 centroid_hz: round_to(hz, 0),
@@ -224,6 +238,8 @@ pub fn analyse(audio: &Audio, settings: &Settings) -> Result<Analysis, String> {
     };
     Ok(Analysis {
         duration_s: round_to(duration, 2),
+        first_tick: settings.clock.first_tick,
+        ticks: settings.clock.tick_at(duration) - settings.clock.first_tick,
         rate,
         integrated_lufs: integrated(&audio.channels, rate).map(|lufs| round_to(lufs, 1)),
         true_peak_dbtp: round_to(true_peak(&audio.channels), 1),
@@ -250,7 +266,7 @@ pub fn analyse(audio: &Audio, settings: &Settings) -> Result<Analysis, String> {
         whole_file_seam: SeamProbe::new(&mono, rate).seam(0.0, mono.len() as f64 / f64::from(rate)),
         loops: settings
             .loop_search
-            .map(|(min_s, max_s)| loop_search(&mono, rate, min_s, max_s)),
+            .map(|(min_s, max_s)| loop_search(&mono, rate, settings.clock, min_s, max_s)),
     })
 }
 

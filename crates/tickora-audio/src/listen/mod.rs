@@ -3,6 +3,7 @@ pub mod fft;
 pub mod filter;
 pub mod loudness;
 pub mod onsets;
+pub mod reading;
 pub mod seam;
 pub mod spectrum;
 pub mod stats;
@@ -10,9 +11,33 @@ pub mod tones;
 pub mod voice;
 pub mod words;
 
-use crate::format::FULL_SCALE;
+use crate::format::{AudioFormat, FULL_SCALE};
 
 pub const MAX_ANALYSIS_TICKS: u64 = 36_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Clock {
+    pub first_tick: u64,
+    pub tick_rate: u32,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Clock {
+            first_tick: 0,
+            tick_rate: AudioFormat::DEFAULT.tick_rate(),
+        }
+    }
+}
+
+impl Clock {
+    pub fn tick_at(self, seconds: f64) -> u64 {
+        self.first_tick
+            + (seconds * f64::from(self.tick_rate) + 1e-9)
+                .floor()
+                .max(0.0) as u64
+    }
+}
 
 pub struct Audio {
     pub rate: u32,
