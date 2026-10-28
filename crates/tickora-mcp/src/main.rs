@@ -1,15 +1,15 @@
 use std::env;
-use std::io;
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
 use serde_json::{Value, json};
-use tickora_mcp::Server;
 use tickora_mcp::demo::ArenaHost;
 use tickora_mcp::scenario::{self, Record, Report};
+use tickora_mcp::{Host, Server};
 
-const USAGE: &str =
-    "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] <file>...]";
+const USAGE: &str = "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] [--wav <path>] <file>...]";
 const MALFORMED: u8 = 2;
 
 fn main() -> ExitCode {
@@ -36,6 +36,14 @@ fn serve() -> ExitCode {
 
 fn scenarios(args: &[String]) -> ExitCode {
     let flags = ["--json", "--record", "--record-alternative"];
+    let (wav, args) = match split_wav(args) {
+        Ok(split) => split,
+        Err(message) => {
+            eprintln!("{message}; {USAGE}");
+            return ExitCode::from(MALFORMED);
+        }
+    };
+    let args = &args[..];
     let has = |flag: &str| args.iter().any(|arg| arg == flag);
     let as_json = has("--json");
     let record = match (has("--record"), has("--record-alternative")) {
@@ -62,12 +70,20 @@ fn scenarios(args: &[String]) -> ExitCode {
         eprintln!("no scenario files given; {USAGE}");
         return ExitCode::from(MALFORMED);
     }
+    if wav.is_some() && files.len() > 1 {
+        eprintln!("--wav takes one scenario file; {USAGE}");
+        return ExitCode::from(MALFORMED);
+    }
     let mut worst = 0;
     let mut reports = Vec::new();
     for file in files {
-        let outcome = scenario::load(Path::new(file)).and_then(|scenario| {
-            scenario::run_recording(&mut ArenaHost::new(0), &scenario, record)
-        });
+        let mut host = ArenaHost::new(0);
+        let outcome = scenario::load(Path::new(file))
+            .and_then(|scenario| scenario::run_recording(&mut host, &scenario, record))
+            .and_then(|report| match &wav {
+                Some(path) => write_wav(&host, path).map(|()| report),
+                None => Ok(report),
+            });
         let code = match &outcome {
             Ok(report) if report.passed => 0,
             Ok(_) => 1,
@@ -76,12 +92,23 @@ fn scenarios(args: &[String]) -> ExitCode {
         worst = worst.max(code);
         if as_json {
             reports.push(match outcome {
-                Ok(report) => json!({ "file": file, "report": report.to_json() }),
+                Ok(report) => {
+                    let mut entry = json!({ "file": file, "report": report.to_json() });
+                    if let Some(path) = &wav {
+                        entry["wav"] = json!(path);
+                    }
+                    entry
+                }
                 Err(error) => json!({ "file": file, "error": error }),
             });
         } else {
             match outcome {
-                Ok(report) => print_report(file, &report),
+                Ok(report) => {
+                    if let Some(path) = &wav {
+                        println!("WROTE {path}");
+                    }
+                    print_report(file, &report)
+                }
                 Err(error) => println!("ERROR {file}: {error}"),
             }
         }
@@ -90,6 +117,39 @@ fn scenarios(args: &[String]) -> ExitCode {
         println!("{}", Value::Array(reports));
     }
     ExitCode::from(worst)
+}
+
+fn split_wav(args: &[String]) -> Result<(Option<String>, Vec<String>), String> {
+    let mut wav = None;
+    let mut rest = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg != "--wav" {
+            rest.push(arg.clone());
+            continue;
+        }
+        let path = args
+            .next()
+            .filter(|path| !path.starts_with("--"))
+            .ok_or("--wav needs a path")?;
+        if wav.replace(path.clone()).is_some() {
+            return Err("--wav is given twice".to_string());
+        }
+    }
+    Ok((wav, rest))
+}
+
+fn write_wav(host: &ArenaHost, path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    let file = File::create(path).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    let mut out = BufWriter::new(file);
+    host.write_wav(0, host.tick(), &mut out)?;
+    out.flush()
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn print_report(file: &str, report: &Report) {

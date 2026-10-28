@@ -39,6 +39,15 @@
     { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0", "camera": "perspective -1250 300 170 -15 26 0 90", "tolerance": "low" },
     { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0-unlit", "camera": "perspective -1250 300 170 -15 26 0 90", "view_mode": "unlit", "tolerance": "low" },
     { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0-wireframe", "camera": "perspective -1250 300 170 -15 26 0 90", "view_mode": "wireframe", "tolerance": "low" },
-    { "at": 600, "screenshot": "goldens/arena/perspective-600-default", "viewport": "perspective", "tolerance": "low" }
+    { "at": 600, "screenshot": "goldens/arena/perspective-600-default", "viewport": "perspective", "tolerance": "low" },
+    { "at": 5, "audio": [0, 5], "voices": { "eq": 3 } },
+    { "at": 31, "audio": [30, 31], "channel": "left", "peak_dbfs": { "min": -40, "max": -6 } },
+    { "at": 60, "audio": [50, 60], "channel": "left", "peak_dbfs": { "min": -30, "max": -6 } },
+    { "at": 60, "audio": [50, 60], "channel": "right", "rms_dbfs": { "min": -40, "max": -20 } },
+    { "at": 600, "audio": [76, 600], "channel": "left", "peak_dbfs": { "max": -120 } },
+    { "at": 600, "audio": [76, 600], "channel": "right", "peak_dbfs": { "max": -120 } },
+    { "at": 600, "audio": [76, 600], "voices": { "eq": 0 } },
+    { "at": 600, "audio": [0, 600], "clipped": { "eq": 0 } },
+    { "at": 600, "audio": [0, 600], "hash": "8160944488685946802" }
   ]
 }

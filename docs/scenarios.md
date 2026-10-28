@@ -31,6 +31,7 @@ Each entry has `at` and exactly one check:
 | Query | `"query": ["position", "velocity"], "count": <int comparison>` |
 | Field | `"entity": { "index": 0, "generation": 0 }, "field": "health.hp", "value": <value comparison>` |
 | Screenshot | `"screenshot": "goldens/arena/top-600"`, plus optional camera keys and `"tolerance"` |
+| Audio | `"audio": [from, to]` plus one audio check, below |
 
 An int comparison is `{ "eq": n }`, or `{ "min": n }`, `{ "max": n }` or both.
 
@@ -52,10 +53,29 @@ A screenshot assertion renders the simulation at its tick and compares the frame
 - `tolerance` is a preset name or an object. Presets: `"zero"` (the default) is an exact match; `"low"`, `"medium"` and `"high"` are Unreal's presets, allowing 16, 24 and 32 per channel, a share of 0.10 in any 16 by 16 block and 0.02 over the frame, with the neighbour search on. The object: `red`, `green`, `blue` and `alpha` are the largest allowed difference per channel (0 to 255, default 0); `max_local_error` is the largest share of differing pixels in any 16 by 16 block, and `max_global_error` the largest share over the whole frame (0 to 1, default 0); `ignore_aa` (default true) lets a pixel match a golden colour in any of its 8 neighbours.
 - A missing golden fails the assertion and names the file to record. A machine with no graphics adapter cannot evaluate the assertion, so the run is a scenario error.
 
+## Audio assertions
+
+The host renders one block of audio per tick, offline: 800 stereo samples at 48,000 Hz and 60 ticks per second, 24-bit integers. The block for tick t is the sound of the step from t to t + 1, so it exists once the simulation reaches t + 1.
+
+- `audio` is the half-open tick range `[from, to)` the check covers, with `from <= to <= at`.
+- Exactly one check follows:
+
+| Check | Shape |
+| --- | --- |
+| Hash | `"hash": "<decimal u64>"`, FNV-1a over the per-tick block hashes in order |
+| Peak | `"channel": "left"` or `"right"`, `"peak_dbfs": { "min": x, "max": y }` (either bound or both) |
+| RMS | `"channel": "left"` or `"right"`, `"rms_dbfs": { "min": x, "max": y }` |
+| Voices | `"voices": <int comparison>`, the most voices active in any tick of the range |
+| Clipped | `"clipped": <int comparison>`, samples the master ceiling clamped |
+
+- Levels are dBFS against 2^23, computed from exact integer peaks and sums of squares; only the final dB value is a float. A silent range reads `null`: it passes a `max` and fails a `min`.
+- A golden WAV is never compared. The hash pins the audio exactly; `--wav` writes it out to listen to.
+
 ## Running
 
 - CLI: `tickora-mcp scenario <file>...`, with `--json` for the full report. Exit code 0 when every assertion passed, 1 when one failed, 2 when a file is malformed. With no arguments the binary serves MCP on stdio.
 - Recording goldens: `--record` writes or replaces each screenshot's `<bucket>.png`, and `--record-alternative` adds the next `<bucket>.altN.png`. A recorded screenshot counts as passed and prints `RECORDED <path>`. The two flags cannot be combined, and the MCP tool never records.
+- Listening: `--wav <path>` writes the whole run of one scenario file as a 24-bit stereo WAV and prints `WROTE <path>`. The host replays its input log on a fresh simulation to produce the samples, so a run of any length keeps only per-tick summaries in memory.
 - MCP: `tickora_run_scenario` with exactly one of `path` (relative to the server's working directory) or `scenario` (the object inline). It runs on a fresh simulation and leaves the live one untouched. A failed assertion is a normal result with `passed: false`; a malformed scenario is a tool error.
 
 Every assertion is evaluated; a run does not stop at the first failure.

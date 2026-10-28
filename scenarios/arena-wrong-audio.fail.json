@@ -1,0 +1,15 @@
+{
+  "name": "arena: deliberately wrong audio expectations, must fail",
+  "seed": "12648430",
+  "inputs": [
+    { "at": 0, "inputs": [{ "type": "spawn" }] }
+  ],
+  "run_to": 10,
+  "expect": [
+    { "at": 10, "audio": [0, 10], "clipped": { "eq": 0 } },
+    { "at": 10, "audio": [0, 10], "hash": "1" },
+    { "at": 10, "audio": [0, 10], "channel": "left", "peak_dbfs": { "max": -60 } },
+    { "at": 10, "audio": [0, 10], "channel": "right", "rms_dbfs": { "min": -200 } },
+    { "at": 10, "audio": [0, 10], "voices": { "eq": 0 } }
+  ]
+}

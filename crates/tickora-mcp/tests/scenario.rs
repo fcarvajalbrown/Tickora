@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 
 use serde_json::{Value, json};
+use tickora_core::hash::StateHasher;
 use tickora_core::input::InputLog;
 use tickora_core::sim::Runner;
 use tickora_mcp::Host;
@@ -104,6 +105,45 @@ fn cli_exit_codes_separate_pass_fail_and_malformed() {
 }
 
 #[test]
+fn wav_writes_the_whole_run_and_replays_to_the_pinned_audio_hash() {
+    let wav = std::env::temp_dir().join(format!("tickora-arena-{}.wav", std::process::id()));
+    let (code, out) = cli(&[Path::new("--wav"), &wav, &arena_file()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("WROTE "), "{out}");
+    let bytes = fs::read(&wav).unwrap();
+    fs::remove_file(&wav).unwrap();
+    assert_eq!(&bytes[..4], b"RIFF");
+    assert_eq!(bytes.len(), 44 + 600 * 800 * 6);
+    let mut chain = StateHasher::new();
+    for block in bytes[44..].chunks(800 * 6) {
+        let mut hasher = StateHasher::new();
+        hasher.write_bytes(block);
+        chain.write_u64(hasher.finish());
+    }
+    let pinned = scenario::load(&arena_file())
+        .unwrap()
+        .expect
+        .iter()
+        .find_map(|assertion| match assertion.check {
+            scenario::Check::Audio {
+                from: 0,
+                to: 600,
+                check: scenario::AudioCheck::Hash(hash),
+            } => Some(hash),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(chain.finish(), pinned);
+
+    let failing = scenarios_dir().join("arena-wrong-expectations.fail.json");
+    let (code, out) = cli(&[Path::new("--wav"), &wav, &arena_file(), &failing]);
+    assert_eq!(code, 2, "{out}");
+    let (code, _) = cli(&[&arena_file(), Path::new("--wav")]);
+    assert_eq!(code, 2);
+    assert!(!wav.exists());
+}
+
+#[test]
 fn the_mcp_tool_runs_a_scenario_file_by_path() {
     let mut host = ArenaHost::new(0);
     let params = json!({
@@ -115,6 +155,6 @@ fn the_mcp_tool_runs_a_scenario_file_by_path() {
     let report = &reply["structuredContent"];
     assert_eq!(report["passed"], true);
     assert_eq!(report["state_hash"], "1511676986884326225");
-    assert_eq!(report["results"].as_array().unwrap().len(), 30);
+    assert_eq!(report["results"].as_array().unwrap().len(), 39);
     assert_eq!(host.tick(), 0);
 }

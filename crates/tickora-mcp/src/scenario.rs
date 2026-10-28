@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
+use tickora_audio::Meters;
 use tickora_core::ecs::{Entity, FieldValue};
 use tickora_render::Tolerance;
 use tickora_render::golden;
@@ -11,7 +12,7 @@ use crate::shot::{self, Shot};
 
 pub const MAX_RUN_TICKS: u64 = 1_000_000;
 
-const CHECK_KEYS: [&str; 7] = [
+const CHECK_KEYS: [&str; 8] = [
     "state_hash",
     "replay_hash",
     "entities",
@@ -19,7 +20,10 @@ const CHECK_KEYS: [&str; 7] = [
     "query",
     "entity",
     "screenshot",
+    "audio",
 ];
+
+const AUDIO_CHECKS: [&str; 5] = ["hash", "peak_dbfs", "rms_dbfs", "voices", "clipped"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
@@ -75,6 +79,52 @@ pub enum Check {
         shot: Shot,
         tolerance: Tolerance,
     },
+    Audio {
+        from: u64,
+        to: u64,
+        check: AudioCheck,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channel {
+    Left,
+    Right,
+}
+
+impl Channel {
+    pub fn index(self) -> usize {
+        match self {
+            Channel::Left => 0,
+            Channel::Right => 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DbRange {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
+impl DbRange {
+    pub fn contains(self, dbfs: Option<f64>) -> bool {
+        match dbfs {
+            None => self.min.is_none(),
+            Some(level) => {
+                self.min.is_none_or(|min| level >= min) && self.max.is_none_or(|max| level <= max)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AudioCheck {
+    Hash(u64),
+    Peak { channel: Channel, bounds: DbRange },
+    Rms { channel: Channel, bounds: DbRange },
+    Voices(Range),
+    Clipped(Range),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,6 +298,40 @@ fn parse_assertion(value: &Value, path: &str) -> Result<Assertion, String> {
                 },
             }
         }
+        "audio" => {
+            let present: Vec<&str> = AUDIO_CHECKS
+                .into_iter()
+                .filter(|key| entry.contains_key(*key))
+                .collect();
+            let [audio_check] = present[..] else {
+                return Err(format!(
+                    "{path}: an audio assertion needs exactly one of {}",
+                    AUDIO_CHECKS.join(", ")
+                ));
+            };
+            let metered = matches!(audio_check, "peak_dbfs" | "rms_dbfs");
+            let mut allowed = vec!["at", "audio", audio_check];
+            if metered {
+                allowed.push("channel");
+            }
+            only(entry, path, &allowed)?;
+            let (from, to) = audio_range(get("audio")?, &at_path("audio"), at)?;
+            let check = match audio_check {
+                "hash" => AudioCheck::Hash(decimal(get("hash")?, &at_path("hash"))?),
+                "voices" => AudioCheck::Voices(range(get("voices")?, &at_path("voices"))?),
+                "clipped" => AudioCheck::Clipped(range(get("clipped")?, &at_path("clipped"))?),
+                _ => {
+                    let channel = channel(get("channel")?, &at_path("channel"))?;
+                    let bounds = db_range(get(audio_check)?, &at_path(audio_check))?;
+                    if audio_check == "peak_dbfs" {
+                        AudioCheck::Peak { channel, bounds }
+                    } else {
+                        AudioCheck::Rms { channel, bounds }
+                    }
+                }
+            };
+            Check::Audio { from, to, check }
+        }
         _ => {
             only(entry, path, &["at", "entity", "field", "value"])?;
             let field_path = at_path("field");
@@ -316,6 +400,64 @@ fn tolerance(value: &Value, path: &str) -> Result<Tolerance, String> {
             Some(_) => return Err(format!("{}: must be a boolean", join(path, "ignore_aa"))),
         },
     })
+}
+
+fn audio_range(value: &Value, path: &str, at: u64) -> Result<(u64, u64), String> {
+    let bounds = array(value, path)?;
+    let [from, to] = &bounds[..] else {
+        return Err(format!("{path}: must be [from, to]"));
+    };
+    let (from, to) = (
+        unsigned(from, &format!("{path}[0]"))?,
+        unsigned(to, &format!("{path}[1]"))?,
+    );
+    if from > to {
+        return Err(format!("{path}: from {from} is past to {to}"));
+    }
+    if to > at {
+        return Err(format!(
+            "{path}: to {to} is past at {at}; the block for tick t is rendered by tick t + 1"
+        ));
+    }
+    Ok((from, to))
+}
+
+fn channel(value: &Value, path: &str) -> Result<Channel, String> {
+    match value.as_str() {
+        Some("left") => Ok(Channel::Left),
+        Some("right") => Ok(Channel::Right),
+        _ => Err(format!("{path}: must be \"left\" or \"right\"")),
+    }
+}
+
+fn db_range(value: &Value, path: &str) -> Result<DbRange, String> {
+    let map = object(value, path)?;
+    only(map, path, &["min", "max"])?;
+    let bound = |key: &str| {
+        map.get(key)
+            .map(|value| {
+                value
+                    .as_f64()
+                    .filter(|number| number.is_finite())
+                    .ok_or_else(|| format!("{}: must be a finite number", join(path, key)))
+            })
+            .transpose()
+    };
+    let bounds = DbRange {
+        min: bound("min")?,
+        max: bound("max")?,
+    };
+    match bounds {
+        DbRange {
+            min: None,
+            max: None,
+        } => Err(format!("{path}: needs min, max or both")),
+        DbRange {
+            min: Some(low),
+            max: Some(high),
+        } if low > high => Err(format!("{path}: min {low} is above max {high}")),
+        _ => Ok(bounds),
+    }
 }
 
 fn entity(value: &Value, path: &str) -> Result<Entity, String> {
@@ -597,6 +739,10 @@ fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
         Check::StateHash(expected) => hash(host.state_hash(), *expected),
         Check::ReplayHash(expected) => hash(host.replay_hash(), *expected),
         Check::Screenshot { .. } => failed("a screenshot needs the renderer".to_string()),
+        Check::Audio { from, to, check } => match host.audio().meters(*from, *to) {
+            Ok(meters) => audio(&meters, check),
+            Err(e) => failed(e),
+        },
         Check::Entities(range) => count(range, world.entity_count()),
         Check::Component { name, count: range } => match world.component_count(name) {
             Some(found) => count(range, found),
@@ -701,6 +847,21 @@ fn screenshot<H: Host>(
             (comparison.passed, actual, message)
         }
     })
+}
+
+fn audio(meters: &Meters, check: &AudioCheck) -> (bool, Value, Option<String>) {
+    let level = |dbfs: Option<f64>, bounds: &DbRange| (bounds.contains(dbfs), json!(dbfs), None);
+    let count = |range: &Range, count: u64| {
+        let count = i64::try_from(count).unwrap_or(i64::MAX);
+        (range.contains(count), json!(count), None)
+    };
+    match check {
+        AudioCheck::Hash(expected) => hash(meters.hash, *expected),
+        AudioCheck::Peak { channel, bounds } => level(meters.peak_dbfs[channel.index()], bounds),
+        AudioCheck::Rms { channel, bounds } => level(meters.rms_dbfs[channel.index()], bounds),
+        AudioCheck::Voices(range) => count(range, u64::from(meters.voices)),
+        AudioCheck::Clipped(range) => count(range, meters.clipped),
+    }
 }
 
 fn hash(actual: u64, expected: u64) -> (bool, Value, Option<String>) {
@@ -902,6 +1063,103 @@ mod tests {
         assert!(error(target(".hp", zero)).contains("component.field"));
         let huge = json!({ "index": u64::from(u32::MAX) + 1, "generation": 0 });
         assert!(error(target("health.hp", huge)).contains("at most"));
+    }
+
+    #[test]
+    fn audio_assertions_parse_every_check() {
+        let scenario = from_json(&json!({
+            "seed": 1,
+            "run_to": 10,
+            "expect": [
+                { "at": 10, "audio": [0, 10], "hash": "5" },
+                { "at": 10, "audio": [2, 4], "channel": "left", "peak_dbfs": { "max": -6.0 } },
+                { "at": 10, "audio": [2, 4], "channel": "right", "rms_dbfs": { "min": -60, "max": -10.5 } },
+                { "at": 4, "audio": [4, 4], "voices": { "eq": 0 } },
+                { "at": 10, "audio": [0, 10], "clipped": { "max": 3 } },
+            ],
+        }))
+        .unwrap();
+        let checks: Vec<&Check> = scenario.expect.iter().map(|a| &a.check).collect();
+        assert_eq!(
+            checks[0],
+            &Check::Audio {
+                from: 0,
+                to: 10,
+                check: AudioCheck::Hash(5)
+            }
+        );
+        assert_eq!(
+            checks[2],
+            &Check::Audio {
+                from: 2,
+                to: 4,
+                check: AudioCheck::Rms {
+                    channel: Channel::Right,
+                    bounds: DbRange {
+                        min: Some(-60.0),
+                        max: Some(-10.5)
+                    }
+                }
+            }
+        );
+        assert_eq!(
+            checks[4],
+            &Check::Audio {
+                from: 0,
+                to: 10,
+                check: AudioCheck::Clipped(Range {
+                    min: None,
+                    max: Some(3)
+                })
+            }
+        );
+    }
+
+    #[test]
+    fn audio_assertions_reject_bad_ranges_and_stray_keys() {
+        let audio = |extra: Value| {
+            let mut entry = json!({ "at": 5, "audio": [0, 5] });
+            for (key, value) in extra.as_object().unwrap() {
+                entry[key] = value.clone();
+            }
+            error(minimal(entry))
+        };
+        assert!(audio(json!({ "hash": "1", "audio": [0, 6] })).contains("past at 5"));
+        assert!(audio(json!({ "hash": "1", "audio": [3, 2] })).contains("past to"));
+        assert!(audio(json!({ "hash": "1", "audio": [1] })).contains("[from, to]"));
+        assert!(audio(json!({})).contains("exactly one of hash"));
+        assert!(audio(json!({ "hash": "1", "voices": { "eq": 1 } })).contains("exactly one"));
+        assert!(audio(json!({ "peak_dbfs": { "max": 0 } })).contains("missing key \"channel\""));
+        assert!(
+            audio(json!({ "hash": "1", "channel": "left" })).contains("unexpected key \"channel\"")
+        );
+        let peak = |bounds: Value, channel: &str| {
+            audio(json!({ "channel": channel, "peak_dbfs": bounds }))
+        };
+        assert!(peak(json!({}), "left").contains("needs min, max or both"));
+        assert!(peak(json!({ "min": 0, "max": -1 }), "left").contains("above max"));
+        assert!(peak(json!({ "max": "loud" }), "left").contains("finite number"));
+        assert!(peak(json!({ "max": 0 }), "centre").contains("\"left\" or \"right\""));
+    }
+
+    #[test]
+    fn silence_reads_null_and_passes_only_an_upper_bound() {
+        let scenario = from_json(&json!({
+            "seed": 1,
+            "run_to": 5,
+            "expect": [
+                { "at": 5, "audio": [0, 5], "channel": "left", "peak_dbfs": { "max": -120 } },
+                { "at": 5, "audio": [0, 5], "channel": "left", "rms_dbfs": { "min": -200 } },
+                { "at": 5, "audio": [0, 5], "voices": { "eq": 0 } },
+                { "at": 5, "audio": [0, 5], "clipped": { "eq": 0 } },
+                { "at": 0, "audio": [0, 0], "hash": tickora_core::hash::StateHasher::new().finish().to_string() },
+            ],
+        }))
+        .unwrap();
+        let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
+        let passed: Vec<bool> = report.outcomes.iter().map(|o| o.passed).collect();
+        assert_eq!(passed, [true, false, true, true, true]);
+        assert_eq!(report.outcomes[0].actual, Value::Null);
     }
 
     #[test]
