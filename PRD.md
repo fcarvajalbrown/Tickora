@@ -2,7 +2,7 @@
 
 ## 1. Summary
 
-A new game engine written in Rust, built so coding agents can create and verify games without an editor. It has a deterministic ECS simulation core, a built-in MCP server, scenario files with assertions, and headless screenshots. Claude Code is the first-class agent. The project is open source under MIT OR Apache-2.0. Its primary goal is making horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent; GitHub stars and discoverability are secondary.
+A new game engine written in Rust, built so coding agents can create and verify games without an editor. It has a deterministic ECS simulation core, a built-in MCP server, scenario files with assertions, and headless screenshots. Claude Code is the first-class agent. The project is open source under MIT OR Apache-2.0. It has two goals of equal weight: making horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent; and GitHub stars and discoverability.
 
 ## 2. Problem
 
@@ -30,9 +30,11 @@ Main journey: the user describes a game, the agent builds it, the engine proves 
 
 ## 4. Goals and Non-goals
 
-Goal: make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent.
+Goals, equally important:
+- Make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent.
+- Maximize GitHub stars and discoverability.
 
-Secondary: GitHub stars and discoverability, public games built on the engine, and contributors and forks.
+Secondary signals: public games built on the engine, and contributors and forks.
 
 Non-goal for v1: a visual editor or GUI.
 

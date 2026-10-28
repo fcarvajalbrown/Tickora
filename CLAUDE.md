@@ -4,7 +4,7 @@ Read `PRD.md` first.
 
 ## Goal
 
-- Tickora exists to make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent. Weigh every feature and decision against that goal.
+- Two goals, equally important: make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent; and GitHub stars and discoverability. Weigh every feature and decision against both.
 
 ## Unreal Engine as the model
 
