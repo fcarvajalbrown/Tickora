@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,6 +8,7 @@ use tickora_core::ecs::{Entity, FieldValue};
 use tickora_render::Tolerance;
 use tickora_render::golden;
 
+use crate::hearing::{self, Hearing};
 use crate::host::Host;
 use crate::shot::{self, Shot};
 
@@ -23,7 +25,16 @@ const CHECK_KEYS: [&str; 8] = [
     "audio",
 ];
 
-const AUDIO_CHECKS: [&str; 5] = ["hash", "peak_dbfs", "rms_dbfs", "voices", "clipped"];
+const AUDIO_CHECKS: [&str; 8] = [
+    "hash",
+    "peak_dbfs",
+    "rms_dbfs",
+    "voices",
+    "clipped",
+    "loudness_lufs",
+    "onsets",
+    "sound",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
@@ -125,12 +136,24 @@ pub enum AudioCheck {
     Rms { channel: Channel, bounds: DbRange },
     Voices(Range),
     Clipped(Range),
+    Loudness(DbRange),
+    Onsets(Range),
+    Sound { name: String, starts: Range },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Range {
     pub min: Option<i64>,
     pub max: Option<i64>,
+}
+
+impl AudioCheck {
+    pub fn hears(&self) -> bool {
+        matches!(
+            self,
+            AudioCheck::Loudness(_) | AudioCheck::Onsets(_) | AudioCheck::Sound { .. }
+        )
+    }
 }
 
 impl Range {
@@ -314,12 +337,24 @@ fn parse_assertion(value: &Value, path: &str) -> Result<Assertion, String> {
             if metered {
                 allowed.push("channel");
             }
+            if audio_check == "sound" {
+                allowed.push("starts");
+            }
             only(entry, path, &allowed)?;
             let (from, to) = audio_range(get("audio")?, &at_path("audio"), at)?;
             let check = match audio_check {
                 "hash" => AudioCheck::Hash(decimal(get("hash")?, &at_path("hash"))?),
                 "voices" => AudioCheck::Voices(range(get("voices")?, &at_path("voices"))?),
                 "clipped" => AudioCheck::Clipped(range(get("clipped")?, &at_path("clipped"))?),
+                "loudness_lufs" => AudioCheck::Loudness(db_range(
+                    get("loudness_lufs")?,
+                    &at_path("loudness_lufs"),
+                )?),
+                "onsets" => AudioCheck::Onsets(range(get("onsets")?, &at_path("onsets"))?),
+                "sound" => AudioCheck::Sound {
+                    name: string(get("sound")?, &at_path("sound"))?,
+                    starts: range(get("starts")?, &at_path("starts"))?,
+                },
                 _ => {
                     let channel = channel(get("channel")?, &at_path("channel"))?;
                     let bounds = db_range(get(audio_check)?, &at_path(audio_check))?;
@@ -680,6 +715,7 @@ pub fn run_recording<H: Host>(
     let mut pending = order.into_iter().peekable();
     let mut batches = scenario.inputs.iter().peekable();
     let mut outcomes = Vec::with_capacity(scenario.expect.len());
+    let mut heard = BTreeMap::new();
     loop {
         let tick = host.tick();
         while let Some(index) = pending.next_if(|&index| scenario.expect[index].at == tick) {
@@ -697,7 +733,7 @@ pub fn run_recording<H: Host>(
                     record,
                 )
                 .map_err(|e| format!("expect[{index}] at {tick}: {e}"))?,
-                check => evaluate(host, check),
+                check => evaluate(host, check, &mut heard),
             };
             outcomes.push(Outcome {
                 index,
@@ -728,7 +764,11 @@ pub fn run_recording<H: Host>(
     })
 }
 
-fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
+fn evaluate<H: Host>(
+    host: &H,
+    check: &Check,
+    heard: &mut BTreeMap<(u64, u64), Result<Hearing, String>>,
+) -> (bool, Value, Option<String>) {
     let world = host.world();
     let count = |range: &Range, count: usize| {
         let count = i64::try_from(count).unwrap_or(i64::MAX);
@@ -739,6 +779,15 @@ fn evaluate<H: Host>(host: &H, check: &Check) -> (bool, Value, Option<String>) {
         Check::StateHash(expected) => hash(host.state_hash(), *expected),
         Check::ReplayHash(expected) => hash(host.replay_hash(), *expected),
         Check::Screenshot { .. } => failed("a screenshot needs the renderer".to_string()),
+        Check::Audio { from, to, check } if check.hears() => {
+            match heard
+                .entry((*from, *to))
+                .or_insert_with(|| hearing::hear(host, *from, *to, "scenario", None))
+            {
+                Ok(heard) => hear(heard, check),
+                Err(e) => failed(e.clone()),
+            }
+        }
         Check::Audio { from, to, check } => match host.audio().meters(*from, *to) {
             Ok(meters) => audio(&meters, check),
             Err(e) => failed(e),
@@ -861,6 +910,40 @@ fn audio(meters: &Meters, check: &AudioCheck) -> (bool, Value, Option<String>) {
         AudioCheck::Rms { channel, bounds } => level(meters.rms_dbfs[channel.index()], bounds),
         AudioCheck::Voices(range) => count(range, u64::from(meters.voices)),
         AudioCheck::Clipped(range) => count(range, meters.clipped),
+        _ => (
+            false,
+            Value::Null,
+            Some("this check needs hearing".to_string()),
+        ),
+    }
+}
+
+fn hear(heard: &Hearing, check: &AudioCheck) -> (bool, Value, Option<String>) {
+    let count = |range: &Range, count: usize| {
+        let count = i64::try_from(count).unwrap_or(i64::MAX);
+        (range.contains(count), json!(count), None)
+    };
+    match (check, &heard.analysis) {
+        (AudioCheck::Sound { name, starts }, _) => count(
+            starts,
+            heard
+                .sounds
+                .iter()
+                .filter(|event| event["event"] == "start" && event["sound"] == name.as_str())
+                .count(),
+        ),
+        (_, None) => (false, Value::Null, Some(heard.reading.clone())),
+        (AudioCheck::Loudness(bounds), Some(analysis)) => (
+            bounds.contains(analysis.integrated_lufs),
+            json!(analysis.integrated_lufs),
+            None,
+        ),
+        (AudioCheck::Onsets(range), Some(analysis)) => count(range, analysis.event_count),
+        _ => (
+            false,
+            Value::Null,
+            Some("this check is metered, not heard".to_string()),
+        ),
     }
 }
 
@@ -1160,6 +1243,85 @@ mod tests {
         let passed: Vec<bool> = report.outcomes.iter().map(|o| o.passed).collect();
         assert_eq!(passed, [true, false, true, true, true]);
         assert_eq!(report.outcomes[0].actual, Value::Null);
+    }
+
+    #[test]
+    fn heard_checks_measure_loudness_onsets_and_named_starts() {
+        let scenario = from_json(&json!({
+            "seed": 7,
+            "inputs": [
+                { "at": 0, "inputs": [{ "type": "spawn" }] },
+                { "at": 40, "inputs": [{ "type": "spawn" }, { "type": "damage", "amount": 1 }] },
+            ],
+            "run_to": 90,
+            "expect": [
+                { "at": 90, "audio": [0, 90], "loudness_lufs": { "min": -40, "max": -10 } },
+                { "at": 90, "audio": [0, 90], "loudness_lufs": { "max": -60 } },
+                { "at": 90, "audio": [0, 90], "onsets": { "min": 1 } },
+                { "at": 90, "audio": [0, 90], "onsets": { "eq": 0 } },
+                { "at": 90, "audio": [0, 90], "sound": "spawn", "starts": { "eq": 2 } },
+                { "at": 90, "audio": [41, 90], "sound": "spawn", "starts": { "eq": 0 } },
+                { "at": 90, "audio": [0, 90], "sound": "hit", "starts": { "eq": 1 } },
+                { "at": 90, "audio": [0, 90], "sound": "door", "starts": { "eq": 1 } },
+                { "at": 2, "audio": [0, 2], "onsets": { "eq": 0 } },
+                { "at": 10, "audio": [0, 10], "loudness_lufs": { "max": -10 } },
+            ],
+        }))
+        .unwrap();
+        let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
+        let passed: Vec<bool> = report.outcomes.iter().map(|o| o.passed).collect();
+        assert_eq!(
+            passed,
+            [
+                true, false, true, false, true, true, true, false, false, true
+            ]
+        );
+        assert!(report.outcomes[0].actual.as_f64().is_some());
+        assert_eq!(report.outcomes[4].actual, json!(2));
+        let short = report.outcomes[8].message.as_deref().unwrap();
+        assert!(short.ends_with("the analysis needs at least 3"));
+        assert_eq!(report.outcomes[9].actual, Value::Null);
+    }
+
+    #[test]
+    fn heard_checks_parse_and_reject_stray_keys() {
+        let scenario = from_json(&json!({
+            "seed": 1,
+            "run_to": 10,
+            "expect": [
+                { "at": 10, "audio": [0, 10], "loudness_lufs": { "min": -30 } },
+                { "at": 10, "audio": [0, 10], "onsets": { "eq": 2 } },
+                { "at": 10, "audio": [0, 10], "sound": "hit", "starts": { "min": 1 } },
+            ],
+        }))
+        .unwrap();
+        assert_eq!(
+            scenario.expect[2].check,
+            Check::Audio {
+                from: 0,
+                to: 10,
+                check: AudioCheck::Sound {
+                    name: "hit".to_string(),
+                    starts: Range {
+                        min: Some(1),
+                        max: None
+                    }
+                }
+            }
+        );
+        let audio = |extra: Value| {
+            let mut entry = json!({ "at": 5, "audio": [0, 5] });
+            for (key, value) in extra.as_object().unwrap() {
+                entry[key] = value.clone();
+            }
+            error(minimal(entry))
+        };
+        assert!(audio(json!({ "sound": "hit" })).contains("missing key \"starts\""));
+        assert!(
+            audio(json!({ "onsets": { "eq": 1 }, "starts": { "eq": 1 } }))
+                .contains("unexpected key \"starts\"")
+        );
+        assert!(audio(json!({ "loudness_lufs": {} })).contains("needs min, max or both"));
     }
 
     #[test]

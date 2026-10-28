@@ -48,6 +48,9 @@
     { "at": 600, "audio": [116, 600], "channel": "right", "peak_dbfs": { "max": -120 } },
     { "at": 600, "audio": [116, 600], "voices": { "eq": 0 } },
     { "at": 600, "audio": [0, 600], "clipped": { "eq": 0 } },
-    { "at": 600, "audio": [0, 600], "hash": "7992212486382139457" }
+    { "at": 600, "audio": [0, 600], "hash": "7992212486382139457" },
+    { "at": 600, "audio": [0, 600], "loudness_lufs": { "min": -24.6, "max": -22.6 } },
+    { "at": 600, "audio": [0, 600], "onsets": { "eq": 1 } },
+    { "at": 600, "audio": [0, 600], "sound": "spawn", "starts": { "eq": 4 } }
   ]
 }

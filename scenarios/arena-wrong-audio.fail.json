@@ -10,6 +10,9 @@
     { "at": 10, "audio": [0, 10], "hash": "1" },
     { "at": 10, "audio": [0, 10], "channel": "left", "peak_dbfs": { "max": -60 } },
     { "at": 10, "audio": [0, 10], "channel": "right", "rms_dbfs": { "min": -200 } },
-    { "at": 10, "audio": [0, 10], "voices": { "eq": 0 } }
+    { "at": 10, "audio": [0, 10], "voices": { "eq": 0 } },
+    { "at": 10, "audio": [0, 10], "loudness_lufs": { "min": -10 } },
+    { "at": 10, "audio": [0, 10], "onsets": { "eq": 5 } },
+    { "at": 10, "audio": [0, 10], "sound": "spawn", "starts": { "eq": 2 } }
   ]
 }
