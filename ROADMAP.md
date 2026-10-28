@@ -10,6 +10,7 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 
 - Phase 7 is in progress: audio (0.7.0); item 2 is next.
 - Felipe decides: where the demo lives and the default host (phase 9).
+- Felipe decides: the demo's game design (phase 9).
 - Felipe decides: what counts as proof and whether CI runs it (phase 9).
 - Felipe decides: project name, license and release scope (phase 10).
 
@@ -38,12 +39,13 @@ Status: **Not Started**. Builds on phase 6; visuals like Amnesia: The Bunker (PR
 Status: **Not Started**. PRD section 5.
 
 1. Not Started. Where the demo lives and the default host (Felipe decides).
-2. Not Started. Mine tile grid built into meshes by the generators.
-3. Not Started. Miner: walk, run, lamp; running and the lamp make noise.
-4. Not Started. Monster: investigates noise, hunts on sight in light.
-5. Not Started. Pump generator burning limited fuel keeps tunnels lit.
-6. Not Started. Shaft lift as the exit.
-7. Not Started. Proof scenarios and goldens; whether CI runs them (Felipe decides).
+2. Not Started. Demo game design (Felipe decides); layout from real mine plans with branching paths and lights, not one linear or spiral tunnel.
+3. Not Started. Mine tile grid built into meshes by the generators.
+4. Not Started. Miner: walk, run, lamp; running and the lamp make noise.
+5. Not Started. Monster: investigates noise, hunts on sight in light.
+6. Not Started. Pump generator burning limited fuel keeps tunnels lit.
+7. Not Started. Shaft lift as the exit.
+8. Not Started. Proof scenarios and goldens; whether CI runs them (Felipe decides).
 
 ## Phase 10: public release, 0.10.0
 
