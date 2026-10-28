@@ -1,0 +1,14 @@
+{
+ "sample_rate": 48000,
+ "reference_lufs": -18.0,
+ "momentary_window_s": 0.4,
+ "momentary_hop_s": 0.1,
+ "fade_in_s": 0.002,
+ "fade_out_s": 0.02,
+ "sounds": {
+  "hit_01": {"source": {"manifest": "specs/audio/bigsoundbank.json", "id": "2460", "folder": "work/audio/bigsoundbank"}, "trim_db": -10.3},
+  "hit_02": {"source": {"manifest": "specs/audio/bigsoundbank.json", "id": "2461", "folder": "work/audio/bigsoundbank"}, "trim_db": -10.3},
+  "hit_03": {"source": {"manifest": "specs/audio/bigsoundbank.json", "id": "2463", "folder": "work/audio/bigsoundbank"}, "trim_db": -10.3},
+  "spawn": {"source": {"synth": "specs/audio/synth.json", "id": "spawn"}}
+ }
+}

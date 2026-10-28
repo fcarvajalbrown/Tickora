@@ -1,0 +1,48 @@
+{
+ "header": [
+  "Tickora",
+  "made by Felipe Carvajal Brown",
+  "Brøwn Marcó Studios",
+  "© Felipe Carvajal Brown. All rights reserved."
+ ],
+ "public_domain_own_sites": [
+  "bigsoundbank.com"
+ ],
+ "sections": [
+  {
+   "title": "Tools",
+   "entries": [
+    {
+     "name": "Keel",
+     "lines": [
+      "Felipe Carvajal Brown",
+      "GNU AGPL-3.0"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Sound",
+   "entries": [
+    {
+     "name": "Sounds by Joseph Sardin",
+     "lines": [
+      "BigSoundBank, bigsoundbank.com",
+      "Thank you for running it alone and unpaid since 2005.",
+      "If his sounds help you, a donation keeps it going."
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Sound",
+   "from": "named_sources",
+   "path": "specs/audio/bigsoundbank.json",
+   "options": {
+    "skip_sites": [
+     "bigsoundbank.com"
+    ]
+   }
+  }
+ ]
+}

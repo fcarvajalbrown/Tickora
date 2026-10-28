@@ -1,0 +1,14 @@
+{
+ "sample_rate": 48000,
+ "sounds": {
+  "spawn": {
+   "seconds": 0.4,
+   "seed": 0,
+   "layers": [
+    {"type": "noise", "colour": "brown", "lowpass": 200, "attack": 0.002, "decay": 0.06},
+    {"type": "tone", "freq": [220, 667], "gain_db": -6, "attack": 0.01, "hold": 0.25, "release": 0.1}
+   ],
+   "room": {"decay_s": 0.3, "wet_db": -12}
+  }
+ }
+}

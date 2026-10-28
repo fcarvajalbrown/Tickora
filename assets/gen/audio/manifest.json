@@ -1,0 +1,69 @@
+{
+ "hit_01": {
+  "file": "hit_01.wav",
+  "source": {
+   "manifest": "specs/audio/bigsoundbank.json",
+   "id": "2460",
+   "sha256": "2c40a361dbaa2f01971448215df2e5ff2925d4b7ccfd8d390e5ed073610e3db3"
+  },
+  "start": 0.0,
+  "end": null,
+  "trim_db": -10.3,
+  "seconds": 0.8383,
+  "lufs_before": -26.39,
+  "gain_db": -1.91,
+  "lufs_after": -28.3,
+  "peak_dbfs": -2.38,
+  "sha256": "58e688a9846bf06741e4a376d625bea8ffeaabc4ec85fd213d4f707189d15609"
+ },
+ "hit_02": {
+  "file": "hit_02.wav",
+  "source": {
+   "manifest": "specs/audio/bigsoundbank.json",
+   "id": "2461",
+   "sha256": "3ce4c0be524362ec90d6a5591dba940ed88c3b5e5f392f0783031246f48389dd"
+  },
+  "start": 0.0,
+  "end": null,
+  "trim_db": -10.3,
+  "seconds": 0.8762,
+  "lufs_before": -29.26,
+  "gain_db": 0.96,
+  "lufs_after": -28.3,
+  "peak_dbfs": -1.1,
+  "sha256": "2c802486389dc3978245e09a074cf646a4b48cd4dd75b472a8111c10d2bf6830"
+ },
+ "hit_03": {
+  "file": "hit_03.wav",
+  "source": {
+   "manifest": "specs/audio/bigsoundbank.json",
+   "id": "2463",
+   "sha256": "338c14568c0e8e49a34f20c826d2260bce38c67b1bfbe74a4b73c68f07933c90"
+  },
+  "start": 0.0,
+  "end": null,
+  "trim_db": -10.3,
+  "seconds": 0.9358,
+  "lufs_before": -28.29,
+  "gain_db": -0.01,
+  "lufs_after": -28.3,
+  "peak_dbfs": -1.45,
+  "sha256": "d3369a418e067a577a324c0189ae0ea7e3980d8ee9234612f9f5c0c90d93e303"
+ },
+ "spawn": {
+  "file": "spawn.wav",
+  "source": {
+   "synth": "specs/audio/synth.json",
+   "id": "spawn"
+  },
+  "start": 0.0,
+  "end": null,
+  "trim_db": 0.0,
+  "seconds": 0.4,
+  "lufs_before": -9.98,
+  "gain_db": -8.02,
+  "lufs_after": -18.0,
+  "peak_dbfs": -9.02,
+  "sha256": "b1a35f70e277f0c5c4c707746025bbed692dd9fb594d2dc40149f057371f0248"
+ }
+}
