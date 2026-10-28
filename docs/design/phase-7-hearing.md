@@ -27,6 +27,7 @@ An agent cannot listen to a WAV, so Tickora describes the audio it renders in a 
 
 - Lives in a new `tickora_audio::listen` module: radix-2 FFT, Hann window, RBJ biquads, a 4th-order Butterworth band-pass run forward and back, a windowed-sinc 4x upsampler for true peak, median filters and peak finding.
 - Input is the rendered 24-bit frames as `f64` over full scale. Every measure is derived output, as `Fx::to_f64` is: nothing is hashed, so the audio and state pins stay where they are.
+- Finding during the build: listen.py's K-weighting is built from RBJ cookbook biquads (high shelf at 1681.97 Hz, high-pass at 38.14 Hz), not the exact BS.1770 coefficients. A 1 kHz sine at -20 dBFS on both channels reads -20.25 LUFS through it, against -20.0 on a strict BS.1770 meter such as Keel's pyloudnorm. The port keeps listen.py's filter so the two tools agree; a hearing LUFS can sit about 0.25 dB below Keel's for the same audio.
 - Times are given in ticks and in seconds; the timeline uses 12 segments by default, as listen.py does.
 - The plain-words reading reuses listen.py's thresholds and wording word for word, so the same sound reads the same in Corpofobia and Tickora.
 - `f64::sin` comes from each platform's maths library, so the last digits can differ between Windows and Linux. Assertions use tolerances for that; a reading word that sits exactly on a threshold could differ between platforms.

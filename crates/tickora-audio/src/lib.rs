@@ -3,6 +3,7 @@ pub mod capture;
 pub mod component;
 pub mod format;
 pub mod graph;
+pub mod listen;
 pub mod math;
 pub mod mixer;
 pub mod take;
