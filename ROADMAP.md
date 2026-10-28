@@ -9,9 +9,9 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 ## Open items
 
 - Phase 7 is next: audio (0.7.0).
-- Felipe decides: where the demo lives and the default host (phase 8).
-- Felipe decides: what counts as proof and whether CI runs it (phase 8).
-- Felipe decides: project name, license and release scope (phase 9).
+- Felipe decides: where the demo lives and the default host (phase 9).
+- Felipe decides: what counts as proof and whether CI runs it (phase 9).
+- Felipe decides: project name, license and release scope (phase 10).
 
 ## Phases 1 to 6: core, MCP, scenarios, screenshots, asset pipeline, 3D renderer
 
@@ -25,7 +25,15 @@ Status: **Not Started**.
 2. Not Started. Headless audio output a scenario can check; Keel for mixing and mastering.
 3. Not Started. CC0 and generated sounds through the phase 5 tools.
 
-## Phase 8: coal-mine demo, 0.8.0
+## Phase 8: Bunker-level visuals, 0.8.0
+
+Status: **Not Started**. Builds on phase 6; visuals like Amnesia: The Bunker (PRD section 4).
+
+1. Not Started. Study Amnesia: The Bunker's look; findings in `docs/research/` before the rest of the list is fixed.
+2. Not Started. Shadows from the point lights and specular highlights.
+3. Not Started. Normal maps, mipmaps and filtered texture sampling.
+
+## Phase 9: coal-mine demo, 0.9.0
 
 Status: **Not Started**. PRD section 5.
 
@@ -37,7 +45,7 @@ Status: **Not Started**. PRD section 5.
 6. Not Started. Shaft lift as the exit.
 7. Not Started. Proof scenarios and goldens; whether CI runs them (Felipe decides).
 
-## Phase 9: public release, 0.9.0
+## Phase 10: public release, 0.10.0
 
 Status: **Not Started**. PRD sections 9 and 12.
 
@@ -50,5 +58,6 @@ Status: **Not Started**. PRD sections 9 and 12.
 - MCP: one simulation per process; no `outputSchema`; no input-log export or replay tool.
 - ECS: derive macro, systems and schedules, `query3` and above, trig tables (ADR 0001).
 - A window a human plays the game in.
-- Shadows, physics and 3D collision (ADR 0003).
+- Physics and 3D collision (ADR 0003).
+- Anti-aliasing, after the coal-mine demo (Felipe); the tolerance table is measured again when it lands.
 - `front` and `side` viewports, reserved.

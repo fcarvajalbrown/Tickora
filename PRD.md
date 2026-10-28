@@ -115,8 +115,9 @@ Order follows dependencies, confirmed by Felipe; each phase is one `0.MINOR.0` r
 5. Asset pipeline: mesh and texture generators and CC0 sourcing (0.5.0).
 6. Grey-box 3D renderer (0.6.0).
 7. Audio (0.7.0).
-8. Coal-mine demo game with proof scenarios (0.8.0).
-9. Public release, after legal review (0.9.0).
+8. Bunker-level visuals: shadows, specular, normal maps, mipmaps and filtered sampling (0.8.0).
+9. Coal-mine demo game with proof scenarios (0.9.0).
+10. Public release, after legal review (0.10.0).
 
 ## 12. Open Questions
 

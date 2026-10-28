@@ -93,7 +93,7 @@ Each step is committed, pushed and checked in CI before the next; ROADMAP items 
 
 ## Open values
 
-- Eye height for the arena fixture's default camera: 170 cm, chosen by Felipe. Source: Epic's Lyra sample, capsule half-height 90 (`LyraCharacter.cpp:41`) plus `BaseEyeHeight` 80 (`LyraCharacter.cpp:79`), with `BaseEyeHeight` measured from the collision center (`Pawn.h`, UE 5.5). The coal-mine miner's eye height is set in phase 8.
+- Eye height for the arena fixture's default camera: 170 cm, chosen by Felipe. Source: Epic's Lyra sample, capsule half-height 90 (`LyraCharacter.cpp:41`) plus `BaseEyeHeight` 80 (`LyraCharacter.cpp:79`), with `BaseEyeHeight` measured from the collision center (`Pawn.h`, UE 5.5). The coal-mine miner's eye height is set in phase 9, the coal-mine demo.
 
 ## Not in this phase
 
