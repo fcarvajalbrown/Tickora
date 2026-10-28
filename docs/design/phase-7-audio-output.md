@@ -1,6 +1,6 @@
 # Phase 7 design, item 2: headless audio output a scenario can check
 
-Status: decisions chosen by Felipe; the written design awaits his review before any code.
+Status: approved by Felipe.
 
 Tickora renders game audio offline, one fixed block of samples per tick, in integer math, so a scenario can pin an exact audio hash and check levels without a sound card. Under the CLAUDE.md rule each part starts from how Unreal does it.
 
@@ -98,7 +98,7 @@ Arguments `from` and `to` (default 0 to the current tick) and an optional `path`
 
 - Registers the audio and noise `Location` components, a listener at the default first-person camera (`EYE_HEIGHT_CM`, its yaw), and a bank with `spawn` (short sine chirp) and `hit` (noise burst with pitch and gain variation), both `Linear` attenuation, into an `sfx` submix.
 - Spawn plays `spawn` at the new entity; damage plays `hit` at the target.
-- Gameplay randomness is untouched, so counts, hp values and screenshot goldens stay as they are. The state and replay pins in `scenarios/arena.json` and the MCP session test change once, with the reason in the commit. `arena.json` gains audio assertions: silence before the first input, a hit audible in its window, no clipping, a pinned hash.
+- Gameplay randomness is untouched, so positions, hp values and screenshot goldens stay as they are. The listener and the `PlaySound` entities live in the arena's one World, as Unreal puts audio components on actors in the level, so `tickora_query` sees them; that shifts live entity counts and entity indices, so those assertions in `scenarios/arena.json` are re-derived once (Felipe's choice at review). The state and replay pins in `scenarios/arena.json` and the MCP session test change once, with the reason in the commit. `arena.json` gains audio assertions: silence before the first input, a hit audible in its window, no clipping, a pinned hash.
 
 ## Out of scope
 
