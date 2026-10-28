@@ -8,7 +8,7 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 
 ## Open items
 
-- Phase 7 is next: audio (0.7.0).
+- Phase 7 is in progress: audio (0.7.0); item 2 is next.
 - Felipe decides: where the demo lives and the default host (phase 9).
 - Felipe decides: what counts as proof and whether CI runs it (phase 9).
 - Felipe decides: project name, license and release scope (phase 10).
@@ -19,9 +19,9 @@ Status: **Done** (0.1.0 to 0.6.0). Full text in the history.
 
 ## Phase 7: audio, 0.7.0
 
-Status: **Not Started**.
+Status: **In Progress**.
 
-1. Not Started. Noise as simulation state: events with position and loudness the monster can hear.
+1. Done. Noise as simulation state: events with position and loudness the monster can hear (`docs/design/phase-7-noise.md`, CI run 40697705009).
 2. Not Started. Headless audio output a scenario can check; Keel for mixing and mastering.
 3. Not Started. CC0 and generated sounds through the phase 5 tools.
 
