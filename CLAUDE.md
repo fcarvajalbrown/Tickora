@@ -2,6 +2,10 @@
 
 Read `PRD.md` first.
 
+## Goal
+
+- Tickora exists to make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent. Weigh every feature and decision against that goal.
+
 ## Unreal Engine as the model
 
 - Hard rule: copy from Unreal Engine anything that can be transported and does not collide with the PRD's original mission. When a feature has an Unreal counterpart (camera, viewports, screenshots, automation tests, naming), start from how Unreal does it.
