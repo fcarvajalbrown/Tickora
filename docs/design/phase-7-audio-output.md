@@ -23,7 +23,9 @@ Tickora renders game audio offline, one fixed block of samples per tick, in inte
 - Sound attenuation: inner radius is the region where the source does not attenuate; falloff distance is the fade beyond it (Epic, "Sound attenuation in Unreal Engine"; UDK "Distance Model Attenuation").
 - Keel's README: BS.1770-4 integrated LUFS, 4x oversampled true peak, deterministic, offline, Python.
 
-Not verified in this session: that Linear is Unreal's default distance algorithm, and that Unreal's default stereo panner is equal power. Both are from my knowledge of Unreal; I found no Epic page stating either, and the local installs ship no engine `.cpp`.
+Linear as the default distance algorithm is verified: Epic's "Sound attenuation in Unreal Engine" page says of Linear, "This is the default function", and a default-constructed `SoundAttenuationSettings` in UE 5.5, read headless through the Python commandlet on an empty project, has `distance_algorithm` `LINEAR`.
+
+Equal power as the engine's default panner is not verified. `EPanningMethod` (UE 5.5 `AudioSettings.h`) has `Linear` and `EqualPower`; `UAudioSettings::PanningMethod` has no initializer in the header, no engine `.ini` sets it, and the constructor that would is in a `.cpp` the install does not ship. Python cannot convert the enum, and `obj dump` prints nothing in a commandlet. Epic's Lyra sample sets `PanningMethod=EqualPower` in its own `DefaultEngine.ini`, so equal power is what Epic ships in a sample, not a proven engine default. The design keeps equal power, Felipe's choice.
 
 ## Crate
 
