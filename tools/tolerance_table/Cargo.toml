@@ -1,0 +1,12 @@
+[package]
+name = "tolerance-table"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tickora-render = { version = "0.5.0", path = "../../crates/tickora-render" }
+
+[lints]
+workspace = true
