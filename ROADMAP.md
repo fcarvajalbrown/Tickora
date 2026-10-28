@@ -60,6 +60,7 @@ Status: **Not Started**. PRD sections 9 and 12.
 - MCP: one simulation per process; no `outputSchema`; no input-log export or replay tool.
 - ECS: derive macro, systems and schedules, `query3` and above, trig tables (ADR 0001).
 - A window a human plays the game in.
+- After v1: a scripting layer and a node editor for teammates who don't use agents, with graphs stored as text an agent can edit too (`docs/research/scripting-language.md`).
 - Physics and 3D collision (ADR 0003).
 - Anti-aliasing, after the coal-mine demo (Felipe); the tolerance table is measured again when it lands.
 - `front` and `side` viewports, reserved.
