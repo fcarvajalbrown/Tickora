@@ -41,3 +41,7 @@ Felipe asked whether turning one of Frictional's open engines into an agent-driv
 ## Finding
 
 HPL2 is easier for making an Amnesia-like game and harder for the agent-native half. The Must that defines Tickora, cross-platform replay hashes, needs physics and state replaced, which is a rewrite of HPL2's core. A separate MCP bridge for HPL2, without determinism, is the part that transfers cheaply.
+
+## Side-project idea, not scheduled
+
+A small GPLv3 MCP bridge for HPL2, kept apart from Tickora, in the way the Godot and Unity MCP projects drew stars. It would cover only the add-ons above (MCP tools, scripted checks, screenshots through a hidden window), with no determinism promise. Its first job would be a build that compiles without FBX SDK 2012 and on 64-bit Windows. Felipe decided to keep Tickora as the main line.
