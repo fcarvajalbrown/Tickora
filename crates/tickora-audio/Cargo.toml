@@ -1,0 +1,12 @@
+[package]
+name = "tickora-audio"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tickora-core = { version = "0.6.0", path = "../tickora-core" }
+
+[lints]
+workspace = true

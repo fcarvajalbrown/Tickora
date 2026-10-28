@@ -790,6 +790,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tickora-audio"
+version = "0.6.0"
+dependencies = [
+ "tickora-core",
+]
+
+[[package]]
 name = "tickora-core"
 version = "0.6.0"
 
