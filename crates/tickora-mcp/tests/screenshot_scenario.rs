@@ -24,7 +24,7 @@ fn write_scenario(dir: &Path, camera: &str) -> PathBuf {
         "inputs": [{ "at": 0, "inputs": [{"type": "spawn"}, {"type": "spawn"}, {"type": "spawn"}] }],
         "run_to": 30,
         "expect": [
-            { "at": 30, "entities": { "eq": 3 } },
+            { "at": 30, "entities": { "eq": 4 } },
             { "at": 30, "screenshot": "goldens/arena-30", "camera": camera, "width": 64, "height": 48 },
         ],
     });

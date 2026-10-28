@@ -185,7 +185,7 @@ fn different_seeds_give_different_hashes() {
 #[test]
 fn hashes_over_mcp_match_a_direct_runner_fed_the_same_inputs() {
     let (script, log, ticks) = agent_session(Era::Modern, 41, 250);
-    let mut runner = Runner::new(Arena::new(), 77);
+    let mut runner = Runner::new(Arena::new(77), 77);
     let replay = runner.run(&log, ticks);
     let final_state = structured(script.run(77).last().unwrap()).clone();
     assert_eq!(final_state["tick"], ticks);
@@ -200,7 +200,7 @@ fn mcp_session_hash_is_pinned() {
     assert_eq!((state.as_str(), replay.as_str()), PINNED);
 }
 
-const PINNED: (&str, &str) = ("5353186769580955786", "8908456892389666548");
+const PINNED: (&str, &str) = ("10369098738393150080", "1356283555866503632");
 
 #[test]
 fn reset_returns_to_a_fresh_run() {
@@ -286,8 +286,8 @@ fn a_bad_input_is_a_tool_error_and_changes_nothing() {
 fn entity_and_component_lookups_report_misses_as_tool_errors() {
     let mut script = Script::new(Era::Legacy);
     script.call("tickora_step", json!({ "inputs": [{ "type": "spawn" }] }));
-    script.call("tickora_get_entity", json!({ "index": 0, "generation": 0 }));
-    script.call("tickora_get_entity", json!({ "index": 0, "generation": 1 }));
+    script.call("tickora_get_entity", json!({ "index": 1, "generation": 0 }));
+    script.call("tickora_get_entity", json!({ "index": 1, "generation": 1 }));
     script.call("tickora_query", json!({ "components": ["mana"] }));
     script.call("tickora_query", json!({ "components": [] }));
     script.call("tickora_list_components", json!({}));
@@ -305,9 +305,9 @@ fn entity_and_component_lookups_report_misses_as_tool_errors() {
     assert_eq!(entity["components"][2]["fields"]["hp"], 100);
     assert_eq!(replies[3]["result"]["isError"], true);
     assert_eq!(replies[4]["result"]["isError"], true);
-    assert_eq!(structured(&replies[5])["total"], 1);
+    assert_eq!(structured(&replies[5])["total"], 3);
     let listed = structured(&replies[6]);
-    assert_eq!(listed["entities"], 1);
+    assert_eq!(listed["entities"], 3);
     assert_eq!(
         listed["components"][0],
         json!({ "name": "position", "count": 1 })
@@ -322,7 +322,7 @@ fn a_scenario_runs_on_a_fresh_sim_and_leaves_the_live_one_alone() {
         "inputs": [{ "at": 0, "inputs": [{ "type": "spawn" }] }],
         "run_to": 4,
         "expect": [
-            { "at": 4, "entities": { "eq": 1 } },
+            { "at": 4, "entities": { "eq": 2 } },
             { "at": 4, "state_hash": "1" },
         ],
     });

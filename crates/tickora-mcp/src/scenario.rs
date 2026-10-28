@@ -965,12 +965,12 @@ mod tests {
         let scenario = arena(
             20,
             json!([
-                { "at": 0, "entities": { "eq": 0 } },
-                { "at": 1, "entities": { "eq": 2 } },
+                { "at": 0, "entities": { "eq": 1 } },
+                { "at": 1, "entities": { "eq": 5 } },
                 { "at": 1, "component": "health", "count": { "eq": 2 } },
                 { "at": 1, "query": ["position", "velocity"], "count": { "eq": 2 } },
-                field(1, 0, "health.hp", json!({ "eq": 100 })),
-                field(2, 1, "health.hp", json!({ "eq": 95 })),
+                field(1, 1, "health.hp", json!({ "eq": 100 })),
+                field(2, 3, "health.hp", json!({ "eq": 95 })),
                 field(20, 1, "position.x", json!({ "raw": x.raw().to_string() })),
                 field(20, 1, "position.x", json!({ "approx": x.to_f64(), "tol": 1e-9 })),
                 { "at": 20, "state_hash": reference.state_hash().to_string() },
@@ -992,9 +992,9 @@ mod tests {
                 { "at": 20, "state_hash": "1" },
                 field(5, 9, "health.hp", json!({ "eq": 1 })),
                 { "at": 5, "component": "mana", "count": { "eq": 0 } },
-                field(5, 0, "health.hp", json!({ "raw": "100" })),
-                field(5, 0, "health.mana", json!({ "eq": 1 })),
-                { "at": 20, "entities": { "eq": 2 } },
+                field(5, 1, "health.hp", json!({ "raw": "100" })),
+                field(5, 1, "health.mana", json!({ "eq": 1 })),
+                { "at": 20, "entities": { "eq": 3 } },
             ]),
         );
         let report = run(&mut ArenaHost::new(0), &scenario).unwrap();
@@ -1023,8 +1023,8 @@ mod tests {
         let scenario = arena(
             5,
             json!([
-                { "at": 5, "entities": { "eq": 2 } },
-                { "at": 0, "entities": { "eq": 0 } },
+                { "at": 5, "entities": { "eq": 3 } },
+                { "at": 0, "entities": { "eq": 1 } },
             ]),
         );
         let report = run(&mut ArenaHost::new(0), &scenario).unwrap();

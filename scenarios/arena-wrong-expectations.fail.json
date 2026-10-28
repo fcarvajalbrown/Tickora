@@ -6,8 +6,8 @@
   ],
   "run_to": 10,
   "expect": [
-    { "at": 10, "entities": { "eq": 1 } },
-    { "at": 10, "entity": { "index": 0, "generation": 0 }, "field": "health.hp", "value": { "eq": 99 } },
+    { "at": 10, "entities": { "eq": 2 } },
+    { "at": 10, "entity": { "index": 1, "generation": 0 }, "field": "health.hp", "value": { "eq": 99 } },
     { "at": 10, "state_hash": "1" }
   ]
 }

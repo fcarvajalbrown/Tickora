@@ -1,4 +1,7 @@
+use std::io::Write;
+
 use serde_json::Value;
+use tickora_audio::Capture;
 use tickora_core::ecs::World;
 use tickora_render::{Scene, Scene3, ViewMode};
 
@@ -26,4 +29,8 @@ pub trait Host {
     fn scene(&self, view_mode: ViewMode) -> Scene;
 
     fn scene3(&self) -> Scene3;
+
+    fn audio(&self) -> &Capture;
+
+    fn write_wav(&self, from: u64, to: u64, out: &mut dyn Write) -> Result<(), String>;
 }

@@ -1,11 +1,18 @@
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{Value, json};
+use tickora_audio::component::{self as audio, audio_rng};
+use tickora_audio::{
+    Attenuation, AudioFormat, Capture, Envelope, Listener, MixGraph, Mixer, SoundBank, SoundDef,
+    Source, SubmixDef, Variation, wav,
+};
 use tickora_core::ecs::{Component, Entity, FieldValue, Fields, World};
 use tickora_core::fx::Fx;
 use tickora_core::hash::StateHasher;
 use tickora_core::input::{InputEvent, InputLog};
+use tickora_core::noise::Location;
 use tickora_core::rng::Rng;
 use tickora_core::sim::{Runner, Sim};
 use tickora_render::camera::DEFAULT_FOV;
@@ -28,6 +35,9 @@ pub const AMBIENT: [f32; 3] = [0.15, 0.15, 0.15];
 pub const LIGHT_HEIGHT_CM: f64 = 300.0;
 pub const LIGHT_INTENSITY: f32 = 30.0;
 pub const LIGHT_RADIUS_CM: f64 = 2000.0;
+pub const SFX_GAIN: Fx = Fx::from_raw(1 << 31);
+pub const SPAWN_SOUND: &str = "spawn";
+pub const HIT_SOUND: &str = "hit";
 
 const CUBE_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/meshes/cube.glb");
 const FLOOR_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/meshes/floor.glb");
@@ -118,15 +128,38 @@ impl Command {
 
 pub struct Arena {
     world: World,
+    audio_rng: Rng,
 }
 
 impl Arena {
-    pub fn new() -> Self {
+    pub fn new(seed: u64) -> Self {
         let mut world = World::new();
         world.register::<Position>();
         world.register::<Velocity>();
         world.register::<Health>();
-        Arena { world }
+        world.register::<Location>();
+        audio::register(&mut world);
+        let listener = world.spawn();
+        world
+            .insert(listener, default_listener())
+            .expect("audio::register was called on this world");
+        Arena {
+            world,
+            audio_rng: audio_rng(seed),
+        }
+    }
+
+    fn play(&mut self, sound: &str, at: &Position) {
+        let bank = sound_bank();
+        let sound = bank.id(sound).expect("the arena bank has its sounds");
+        audio::play(
+            &mut self.world,
+            bank,
+            &mut self.audio_rng,
+            sound,
+            sound_location(at),
+        )
+        .expect("audio::register was called on this world");
     }
 
     pub fn world(&self) -> &World {
@@ -234,6 +267,88 @@ pub fn unreal_location(position: &Position) -> [f64; 3] {
     ]
 }
 
+pub fn sound_location(position: &Position) -> Location {
+    let unit = Fx::from_int(UNIT_CM as i32);
+    Location::new(position.y * unit, position.x * unit, Fx::ZERO)
+}
+
+pub fn default_listener() -> Listener {
+    let camera = default_camera();
+    let [x, y, z] = camera.location.map(|cm| Fx::from_int(cm as i32));
+    Listener {
+        location: Location::new(x, y, z),
+        yaw: Fx::from_int(camera.rotation.yaw as i32),
+    }
+}
+
+pub fn mix_graph() -> MixGraph {
+    MixGraph::new(
+        Fx::ONE,
+        &[SubmixDef {
+            name: "sfx".to_string(),
+            parent: "master".to_string(),
+            gain: SFX_GAIN,
+        }],
+    )
+    .expect("the arena mix graph is valid")
+}
+
+pub fn sound_bank() -> &'static Arc<SoundBank> {
+    static BANK: OnceLock<Arc<SoundBank>> = OnceLock::new();
+    BANK.get_or_init(|| {
+        let sfx = mix_graph().id("sfx").expect("the arena graph has sfx");
+        let attenuation = Attenuation::Linear {
+            inner_radius: Fx::from_int(500),
+            falloff_distance: Fx::from_int(5000),
+        };
+        let mut bank = SoundBank::new();
+        bank.add(
+            SPAWN_SOUND,
+            SoundDef {
+                source: Source::Sine {
+                    hz: Fx::from_int(660),
+                },
+                envelope: Envelope {
+                    attack: 240,
+                    release: 3600,
+                    duration: 7200,
+                },
+                variation: Variation {
+                    gain: (Fx::from_ratio(1, 4), Fx::from_ratio(1, 4)),
+                    pitch: (Fx::ONE, Fx::ONE),
+                },
+                attenuation,
+                submix: sfx,
+            },
+        )
+        .expect("spawn is a valid sound");
+        bank.add(
+            HIT_SOUND,
+            SoundDef {
+                source: Source::Noise,
+                envelope: Envelope {
+                    attack: 48,
+                    release: 9600,
+                    duration: 12000,
+                },
+                variation: Variation {
+                    gain: (Fx::from_ratio(1, 2), Fx::from_ratio(3, 4)),
+                    pitch: (Fx::from_ratio(4, 5), Fx::from_ratio(6, 5)),
+                },
+                attenuation,
+                submix: sfx,
+            },
+        )
+        .expect("hit is a valid sound");
+        Arc::new(bank)
+    })
+}
+
+pub fn arena_mixer() -> Mixer {
+    Mixer::new(AudioFormat::DEFAULT, sound_bank().clone(), mix_graph())
+        .expect("the arena bank feeds the arena graph")
+}
+
 pub fn default_camera() -> PerspectiveCamera {
     PerspectiveCamera::new(
         [-spawn_span_cm(), 0.0, EYE_HEIGHT_CM],
@@ -254,16 +369,11 @@ pub fn hp_color(hp: i32) -> Color {
     [red as u8, green as u8, 0, 255]
 }
 
-impl Default for Arena {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Sim for Arena {
     type Input = Command;
 
     fn step(&mut self, _tick: u64, inputs: &[InputEvent<Command>], rng: &mut Rng) {
+        audio::clear(&mut self.world);
         for event in inputs {
             match event.input {
                 Command::Spawn => {
@@ -276,6 +386,7 @@ impl Sim for Arena {
                     self.world.insert(e, Position { x: px, y: py }).unwrap();
                     self.world.insert(e, Velocity { x: vx, y: vy }).unwrap();
                     self.world.insert(e, Health(100)).unwrap();
+                    self.play(SPAWN_SOUND, &Position { x: px, y: py });
                 }
                 Command::Damage(amount) => {
                     let victims: Vec<Entity> = self
@@ -288,6 +399,8 @@ impl Sim for Arena {
                         continue;
                     }
                     let target = victims[(amount as usize) % victims.len()];
+                    let at = self.world.get::<Position>(target).unwrap().clone();
+                    self.play(HIT_SOUND, &at);
                     let dead = {
                         let health = self.world.get_mut::<Health>(target).unwrap();
                         health.0 -= amount as i32 % 60;
@@ -315,6 +428,9 @@ impl Sim for Arena {
 
     fn hash_state(&self, hasher: &mut StateHasher) {
         self.world.hash_into(hasher);
+        let (state, increment) = self.audio_rng.raw_parts();
+        hasher.write_u64(state);
+        hasher.write_u64(increment);
     }
 }
 
@@ -322,14 +438,18 @@ pub struct ArenaHost {
     seed: u64,
     runner: Runner<Arena>,
     log: InputLog<Command>,
+    mixer: Mixer,
+    capture: Capture,
 }
 
 impl ArenaHost {
     pub fn new(seed: u64) -> Self {
         Self {
             seed,
-            runner: Runner::new(Arena::new(), seed),
+            runner: Runner::new(Arena::new(seed), seed),
             log: InputLog::new(),
+            mixer: arena_mixer(),
+            capture: Capture::new(AudioFormat::DEFAULT),
         }
     }
 
@@ -379,6 +499,8 @@ impl Host for ArenaHost {
             self.log.push(tick, command);
         }
         self.runner.step(&self.log);
+        let block = self.mixer.render(self.runner.sim().world());
+        self.capture.push(block.summary);
         Ok(())
     }
 
@@ -409,12 +531,35 @@ impl Host for ArenaHost {
     fn scene3(&self) -> Scene3 {
         self.runner.sim().scene3()
     }
+
+    fn audio(&self) -> &Capture {
+        &self.capture
+    }
+
+    fn write_wav(&self, from: u64, to: u64, out: &mut dyn Write) -> Result<(), String> {
+        self.capture.range(from, to)?;
+        let format = self.capture.format();
+        let frames = (to - from) * u64::from(format.samples_per_tick());
+        let header = wav::header(format.sample_rate(), frames)?;
+        out.write_all(&header).map_err(|e| e.to_string())?;
+        let mut runner = Runner::new(Arena::new(self.seed), self.seed);
+        let mut mixer = arena_mixer();
+        for tick in 0..to {
+            runner.step(&self.log);
+            let block = mixer.render(runner.sim().world());
+            if tick >= from {
+                wav::write_frames(out, &block.frames).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use tickora_audio::component as audio_types;
     use tickora_render::Fill;
 
     #[test]
@@ -496,6 +641,63 @@ mod tests {
         assert!(scene.textures.contains_key("dirt"));
         assert_eq!(scene.camera, default_camera());
         assert_eq!(scene.camera.location, [-2500.0, 0.0, EYE_HEIGHT_CM]);
+    }
+
+    #[test]
+    fn spawns_and_hits_play_sounds_at_the_entity_for_one_tick() {
+        let mut host = ArenaHost::new(7);
+        assert_eq!(host.world().query::<Listener>().len(), 1);
+        host.step(&[json!({"type": "spawn"})]).unwrap();
+        let plays = host.world().query::<audio_types::PlaySound>();
+        let (entity, moved) = host.world().query::<Position>()[0];
+        let velocity = host.world().get::<Velocity>(entity).unwrap();
+        let cube = Position {
+            x: moved.x - velocity.x,
+            y: moved.y - velocity.y,
+        };
+        assert_eq!(plays.len(), 1);
+        assert_eq!(plays[0].1.sound, sound_bank().id(SPAWN_SOUND).unwrap());
+        assert_eq!(plays[0].1.location, sound_location(&cube));
+        host.step(&[json!({"type": "damage", "amount": 1})])
+            .unwrap();
+        let plays = host.world().query::<audio_types::PlaySound>();
+        assert_eq!(plays.len(), 1);
+        assert_eq!(plays[0].1.sound, sound_bank().id(HIT_SOUND).unwrap());
+        host.step(&[]).unwrap();
+        assert!(host.world().query::<audio_types::PlaySound>().is_empty());
+        let meters = host.audio().meters(0, 3).unwrap();
+        assert!(meters.peak_dbfs[0].is_some() && meters.peak_dbfs[1].is_some());
+        assert_eq!(meters.clipped, 0);
+        assert_eq!(host.audio().meters(0, 1).unwrap().voices, 1);
+    }
+
+    #[test]
+    fn a_wav_replays_the_input_log_to_the_same_audio() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[json!({"type": "spawn"})]).unwrap();
+        host.step(&[json!({"type": "damage", "amount": 1})])
+            .unwrap();
+        host.step(&[]).unwrap();
+        let mut bytes = Vec::new();
+        host.write_wav(1, 3, &mut bytes).unwrap();
+        assert_eq!(bytes.len(), wav::HEADER_BYTES + 2 * 800 * 6);
+        let frames: Vec<[i32; 2]> = bytes[wav::HEADER_BYTES..]
+            .chunks(6)
+            .map(|frame| {
+                let sample = |b: &[u8]| i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8;
+                [sample(&frame[..3]), sample(&frame[3..])]
+            })
+            .collect();
+        let mut hasher = StateHasher::new();
+        for block in frames.chunks(800) {
+            let mut block_hasher = StateHasher::new();
+            for value in block.iter().flatten() {
+                block_hasher.write_bytes(&value.to_le_bytes()[..3]);
+            }
+            hasher.write_u64(block_hasher.finish());
+        }
+        assert_eq!(hasher.finish(), host.audio().hash(1, 3).unwrap());
+        assert!(host.write_wav(0, 4, &mut Vec::new()).is_err());
     }
 
     #[test]

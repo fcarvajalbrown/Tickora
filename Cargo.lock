@@ -806,6 +806,7 @@ version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
+ "tickora-audio",
  "tickora-core",
  "tickora-render",
 ]

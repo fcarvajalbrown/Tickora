@@ -68,7 +68,7 @@ fn a_scenario_replays_to_the_hashes_of_a_runner_fed_the_same_input_log() {
             log.push(batch.at, Command::from_json(input).unwrap());
         }
     }
-    let mut runner = Runner::new(Arena::new(), parsed.seed);
+    let mut runner = Runner::new(Arena::new(parsed.seed), parsed.seed);
     let replay = runner.run(&log, parsed.run_to);
     let report = scenario::run(&mut ArenaHost::new(0), &parsed).unwrap();
     assert_eq!(report.replay_hash, replay.hash);
@@ -114,7 +114,7 @@ fn the_mcp_tool_runs_a_scenario_file_by_path() {
     assert_eq!(reply["isError"], false, "{reply}");
     let report = &reply["structuredContent"];
     assert_eq!(report["passed"], true);
-    assert_eq!(report["state_hash"], "17906231570684560215");
+    assert_eq!(report["state_hash"], "1511676986884326225");
     assert_eq!(report["results"].as_array().unwrap().len(), 30);
     assert_eq!(host.tick(), 0);
 }
