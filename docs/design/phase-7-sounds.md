@@ -30,6 +30,10 @@ Web check: game loudness guidance measures the whole mix over long play (IESD "o
 
 Decision (Felipe): the takes of one transient sound share one level, set by `trim_db`, the loudest that the quietest picked take reaches with its peak at -1 dBFS. The recordings are not soft-clipped or reshaped. Sustained sounds keep -18 LUFS.
 
+## Hit takes (Felipe)
+
+BigSoundBank Punch #5 (2460), #6 (2461) and #8 (2463), by Joseph Sardin, CC0. Picked from ten measured candidates by the criteria I proposed, since I cannot hear them: one author and session, a single clean blow each, and the closest ceilings (-26.9, -28.2 and -27.8 LUFS with the peak at -1 dBFS), so the shared level is -28.2 LUFS. Three is the fewest takes where No Repeats 1 is not a strict alternation. Felipe judges them by ear in the engine afterwards. `hit` uses `NoRepeats(1)`.
+
 ## Credits rule (Corpofobia's `.claude/rules/assets-and-credits.md`)
 
 - CC0 and public domain from shared hosts (Freesound, archive.org, OpenGameArt, Wikimedia Commons) are never credited.
@@ -63,8 +67,12 @@ Names follow the arena: `hit_01.wav` to `hit_0N.wav`, `spawn.wav`.
 ## Engine
 
 - `tickora_audio::wav::read`: parses RIFF/WAVE with a `fmt ` chunk of PCM, 1 channel, 48,000 Hz, 16 bits, and a `data` chunk. Other chunks are skipped, and any other format is an error naming what was found. Samples become `i32` shifted left by 8, which is exact. No dependency.
-- Takes: `Source::Takes { takes: Arc<[Arc<[i32]>]>, rate, weights, no_repeats }`, or an equivalent field on `SoundDef`, decided while writing it, with the shape recorded here before the commit. Weights repeat when shorter than the takes, as in Unreal. `no_repeats` is clamped to `takes - 1`.
-- Pick: `audio::play` draws the take from the audio Rng stream, weighted, among the takes not in the last `no_repeats` picks for that sound. A `TakeHistory` per sound holds those picks. The arena hashes it next to its audio Rng, so replays and `first_divergence` stay exact. `PlaySound` gains `take: u32`, hashed and shown by `tickora_query`.
+- Takes: `Source::Takes { takes: Arc<[Arc<[i32]>]>, rate, weights, pick }`, or an equivalent field on `SoundDef`, decided while writing it, with the shape recorded here before the commit. Weights repeat when shorter than the takes, as in Unreal.
+- Pick modes, both from Unreal (Felipe added the second while the takes were picked):
+  - `NoRepeats(n)`, MetaSound Random Get's `No Repeats`, default 1: a weighted draw among the takes not in the last `n` picks; `n` is clamped to `takes - 1`.
+  - `WithoutReplacement`, the Sound Cue Random node's `bRandomizeWithoutReplacement` ("only one occurrence of the sound played until all of the other sounds in the set have all been played", UE 5.5 `SoundNodeRandom.h`): a weighted draw among the takes not yet played this round; when all have played, the round restarts. The first pick of a new round is not the last take of the old one, so the rule "never the same take twice in a row" holds across rounds too.
+- Pick state: `audio::play` draws from the audio Rng stream. A `TakeHistory` per sound holds the recent picks or the round's played set. The arena hashes it next to its audio Rng, so replays and `first_divergence` stay exact. `PlaySound` gains `take: u32`, hashed and shown by `tickora_query`.
+- This follows Corpofobia's sound rule, section 7 "Procedural playback": every hit is a random take, 3 to 8 takes, never the same take twice in a row, a shuffle bag allowed for a small pool, pitch and gain variation on top of the pick, seeded apart from gameplay. Its voice filter (`speech_detect.py`) is not adopted now (Felipe); the three picked takes score 0.0 for speech with Corpofobia's copy.
 - Arena: `sound_bank()` builds `hit` from the embedded `hit_0N.wav` takes (keeping its pitch and gain variation and Linear attenuation) and `spawn` from `spawn.wav`, both into `sfx`. Gameplay randomness is untouched, so positions, hp values and the 14 screenshots stay as they are. `PlaySound` gains a field, so the state and replay pins change: `scenarios/arena.json` (state, replay, audio hash and any audio level bounds that move) and the MCP session test are re-pinned once, with the reason in the commit.
 
 ## Tests
