@@ -24,7 +24,7 @@ Current state:
 - Rules every sim follows: integer or fixed-point state only in hashed data, no HashMap iteration order, no threads inside `step`, all randomness through the `Rng` passed in, no clock in the core (a wall-clock driver lives outside and only decides how many ticks to request).
 - Bunker main loop and tick answered in `research-private/bunker/NOTES.md`; the decompile and pyghidra-mcp indexes are built.
 
-- Phase 7 item 2: design `docs/design/phase-7-audio-output.md` written from Felipe's choices (offline per-tick render in a new zero-dependency `tickora-audio`, integer math, audio hash plus peak and RMS assertions, arena makes sounds, `tickora_listen`, Keel offline); waiting for Felipe's review before any code.
+- Phase 7 item 2: design `docs/design/phase-7-audio-output.md` written from Felipe's choices (offline per-tick render in a new zero-dependency `tickora-audio`, integer math, audio hash plus peak and RMS assertions, arena makes sounds, `tickora_listen`, Keel offline); waiting for Felipe's review before any code; once approved, build it (order in the design's Tests section), CI on Windows and Linux, then mark ROADMAP 7.2 done. Unverified in it: Linear as Unreal's default distance algorithm, equal power as its default panner.
 - Scripting: none today; options in `docs/research/scripting-language.md`. A node editor for teammates who don't use AI is after v1 (ROADMAP Unscheduled, PRD section 3).
 - Phase 9 has a new item 2: the demo design is Felipe's, laid out from real mine plans with branching paths.
 
