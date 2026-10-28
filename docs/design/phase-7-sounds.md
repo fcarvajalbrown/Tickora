@@ -1,6 +1,6 @@
 # Phase 7 design, item 3: CC0 and generated sounds through the phase 5 tools
 
-Status: proposed, waiting for Felipe's approval.
+Status: approved by Felipe.
 
 The arena's two synthetic sounds become real ones: `hit` becomes a few CC0 impact takes picked without repeats, and `spawn` becomes one sound generated from a spec. Both go through the phase 5 fetchers, are levelled with Keel's meters, baked small into `assets/gen/audio/` and embedded in the binary. Under the CLAUDE.md rule each part starts from how Unreal does it.
 
