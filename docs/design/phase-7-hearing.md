@@ -40,7 +40,8 @@ An agent cannot listen to a WAV, so Tickora describes the audio it renders in a 
 ## Samples
 
 - The capture keeps only per-tick summaries. Listening replays the input log on a fresh simulation, as `--wav` does, and feeds the frames and the sound list to the analysis; `write_wav` and listening share one replay pass in the host.
-- A range is capped at 36,000 ticks (10 minutes) for analysis, about 230 MB of stereo `f64`; longer ranges are an error naming the cap. Hash and meter checks keep no cap.
+- A range is capped at 36,000 ticks (10 minutes) for analysis; longer ranges are an error naming the cap. Hash and meter checks keep no cap.
+- Finding during the build: the first figure here, about 230 MB, was wrong. Ten minutes of stereo `f64` is about 460 MB, and the exact port also holds a mono copy, the K-weighted copy and the full spectrogram (the tone measure takes a median per frequency over every frame), so the peak is about 1.6 GB. Felipe kept the 36,000-tick cap after freeing memory on this machine; the CI runners have 16 GB.
 
 ## MCP tool 9, `tickora_listen`
 
