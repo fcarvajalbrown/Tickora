@@ -24,6 +24,10 @@ Current state:
 - Rules every sim follows: integer or fixed-point state only in hashed data, no HashMap iteration order, no threads inside `step`, all randomness through the `Rng` passed in, no clock in the core (a wall-clock driver lives outside and only decides how many ticks to request).
 - Bunker main loop and tick answered in `research-private/bunker/NOTES.md`; the decompile and pyghidra-mcp indexes are built.
 
+- Phase 7 item 2: design `docs/design/phase-7-audio-output.md` written from Felipe's choices (offline per-tick render in a new zero-dependency `tickora-audio`, integer math, audio hash plus peak and RMS assertions, arena makes sounds, `tickora_listen`, Keel offline); waiting for Felipe's review before any code.
+- Scripting: none today; options in `docs/research/scripting-language.md`. A node editor for teammates who don't use AI is after v1 (ROADMAP Unscheduled, PRD section 3).
+- Phase 9 has a new item 2: the demo design is Felipe's, laid out from real mine plans with branching paths.
+
 Open:
 - Corpofobia's `tools/credits/build_credits.py` still has the `named_sources` bug fixed in Tickora's copy (`row.get("title", row["name"])` evaluates `row["name"]` eagerly, so a title-only record such as a Freesound sound crashes the build).
 - Plan of record is `ROADMAP.md` (phases 7 audio, 8 Bunker-level visuals, 9 coal-mine demo, 10 public release; order confirmed by Felipe; anti-aliasing after the demo), with ADRs 0002 (first-person 3D target), 0003 (grey-box 3D first, meshes and textures from generators) and 0004 (assets in plain git, no LFS). Phase 6 shipped as 0.6.0 and phase 5 (asset pipeline) as 0.5.0: CC0 fetchers, meshkit, mesh checks, PSX bake and credits under `tools/`, 67 Python tool tests in CI; run them with `.venv/Scripts/python -I -m unittest discover -s tests/tools -p 'test_*.py'`. Tags v0.1.0 to v0.6.0 mark phase ends; releases in `CHANGELOG.md`.
