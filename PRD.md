@@ -26,6 +26,8 @@ Why now: agent bridges are drawing stars, coding agents are Felipe's main workfl
 
 Primary users are solo and indie developers who build with coding agents, plus hobbyists and modders. Claude Code is the first-class agent.
 
+Later user, after v1: teammates who don't use AI, working through a node editor whose graphs agents can edit too (`docs/research/scripting-language.md`).
+
 Main journey: the user describes a game, the agent builds it, the engine proves it works through scenario tests, and a human plays it.
 
 ## 4. Goals and Non-goals
