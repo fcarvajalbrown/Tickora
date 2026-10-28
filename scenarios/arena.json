@@ -24,8 +24,8 @@
     { "at": 600, "entity": { "index": 5, "generation": 0 }, "field": "velocity.x", "value": { "raw_min": "-21474836480", "raw_max": "21474836480" } },
     { "at": 600, "entity": { "index": 1, "generation": 0 }, "field": "position.x", "value": { "raw": "9856949943840" } },
     { "at": 600, "entity": { "index": 1, "generation": 0 }, "field": "position.y", "value": { "approx": 982.0, "tol": 1e-6 } },
-    { "at": 600, "state_hash": "1511676986884326225" },
-    { "at": 600, "replay_hash": "15072179138891889797" },
+    { "at": 600, "state_hash": "8903675243730010471" },
+    { "at": 600, "replay_hash": "3163556718420962639" },
     { "at": 0, "screenshot": "goldens/arena/top-0-grid" },
     { "at": 600, "screenshot": "goldens/arena/top-600-wide", "camera": "top 0 0 6400" },
     { "at": 600, "screenshot": "goldens/arena/top-600-entity0-wireframe", "camera": "top 2295 982 64", "width": 128, "height": 128, "view_mode": "wireframe" },
@@ -43,11 +43,11 @@
     { "at": 5, "audio": [0, 5], "voices": { "eq": 3 } },
     { "at": 31, "audio": [30, 31], "channel": "left", "peak_dbfs": { "min": -40, "max": -6 } },
     { "at": 60, "audio": [50, 60], "channel": "left", "peak_dbfs": { "min": -30, "max": -6 } },
-    { "at": 60, "audio": [50, 60], "channel": "right", "rms_dbfs": { "min": -40, "max": -20 } },
-    { "at": 600, "audio": [76, 600], "channel": "left", "peak_dbfs": { "max": -120 } },
-    { "at": 600, "audio": [76, 600], "channel": "right", "peak_dbfs": { "max": -120 } },
-    { "at": 600, "audio": [76, 600], "voices": { "eq": 0 } },
+    { "at": 60, "audio": [50, 60], "channel": "right", "rms_dbfs": { "min": -58, "max": -38 } },
+    { "at": 600, "audio": [116, 600], "channel": "left", "peak_dbfs": { "max": -120 } },
+    { "at": 600, "audio": [116, 600], "channel": "right", "peak_dbfs": { "max": -120 } },
+    { "at": 600, "audio": [116, 600], "voices": { "eq": 0 } },
     { "at": 600, "audio": [0, 600], "clipped": { "eq": 0 } },
-    { "at": 600, "audio": [0, 600], "hash": "8160944488685946802" }
+    { "at": 600, "audio": [0, 600], "hash": "7992212486382139457" }
   ]
 }

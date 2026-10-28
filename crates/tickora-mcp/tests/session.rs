@@ -200,7 +200,7 @@ fn mcp_session_hash_is_pinned() {
     assert_eq!((state.as_str(), replay.as_str()), PINNED);
 }
 
-const PINNED: (&str, &str) = ("10369098738393150080", "1356283555866503632");
+const PINNED: (&str, &str) = ("2309063919189658946", "17702062355591945499");
 
 #[test]
 fn reset_returns_to_a_fresh_run() {

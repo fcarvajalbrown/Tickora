@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock};
 use serde_json::{Value, json};
 use tickora_audio::component::{self as audio, audio_rng};
 use tickora_audio::{
-    Attenuation, AudioFormat, Capture, Envelope, Listener, MixGraph, Mixer, SoundBank, SoundDef,
-    Source, SubmixDef, Variation, wav,
+    Attenuation, AudioFormat, Capture, Envelope, Listener, MixGraph, Mixer, Pick, SoundBank,
+    SoundDef, Source, SubmixDef, TakeHistory, Variation, wav,
 };
 use tickora_core::ecs::{Component, Entity, FieldValue, Fields, World};
 use tickora_core::fx::Fx;
@@ -43,6 +43,12 @@ const CUBE_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/mesh
 const FLOOR_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/meshes/floor.glb");
 const CHECKER_PNG: &[u8] =
     include_bytes!("../../../assets/gen/render_fixtures/textures/checker.png");
+const SPAWN_WAV: &[u8] = include_bytes!("../../../assets/gen/audio/spawn.wav");
+const HIT_WAVS: [&[u8]; 3] = [
+    include_bytes!("../../../assets/gen/audio/hit_01.wav"),
+    include_bytes!("../../../assets/gen/audio/hit_02.wav"),
+    include_bytes!("../../../assets/gen/audio/hit_03.wav"),
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Position {
@@ -129,6 +135,7 @@ impl Command {
 pub struct Arena {
     world: World,
     audio_rng: Rng,
+    takes: TakeHistory,
 }
 
 impl Arena {
@@ -146,6 +153,7 @@ impl Arena {
         Arena {
             world,
             audio_rng: audio_rng(seed),
+            takes: TakeHistory::new(),
         }
     }
 
@@ -156,6 +164,7 @@ impl Arena {
             &mut self.world,
             bank,
             &mut self.audio_rng,
+            &mut self.takes,
             sound,
             sound_location(at),
         )
@@ -305,18 +314,12 @@ pub fn sound_bank() -> &'static Arc<SoundBank> {
         bank.add(
             SPAWN_SOUND,
             SoundDef {
-                source: Source::Sine {
-                    hz: Fx::from_int(660),
+                source: Source::Pcm {
+                    samples: baked(SPAWN_WAV),
+                    rate: wav::READ_SAMPLE_RATE,
                 },
-                envelope: Envelope {
-                    attack: 240,
-                    release: 3600,
-                    duration: 7200,
-                },
-                variation: Variation {
-                    gain: (Fx::from_ratio(1, 4), Fx::from_ratio(1, 4)),
-                    pitch: (Fx::ONE, Fx::ONE),
-                },
+                envelope: Envelope::default(),
+                variation: Variation::default(),
                 attenuation,
                 submix: sfx,
             },
@@ -325,12 +328,13 @@ pub fn sound_bank() -> &'static Arc<SoundBank> {
         bank.add(
             HIT_SOUND,
             SoundDef {
-                source: Source::Noise,
-                envelope: Envelope {
-                    attack: 48,
-                    release: 9600,
-                    duration: 12000,
+                source: Source::Takes {
+                    takes: HIT_WAVS.map(baked).into(),
+                    rate: wav::READ_SAMPLE_RATE,
+                    weights: Arc::from([]),
+                    pick: Pick::NoRepeats(1),
                 },
+                envelope: Envelope::default(),
                 variation: Variation {
                     gain: (Fx::from_ratio(1, 2), Fx::from_ratio(3, 4)),
                     pitch: (Fx::from_ratio(4, 5), Fx::from_ratio(6, 5)),
@@ -342,6 +346,12 @@ pub fn sound_bank() -> &'static Arc<SoundBank> {
         .expect("hit is a valid sound");
         Arc::new(bank)
     })
+}
+
+fn baked(bytes: &[u8]) -> Arc<[i32]> {
+    wav::read_mono16(bytes)
+        .expect("assets/gen/audio holds 48 kHz mono 16-bit WAVs")
+        .into()
 }
 
 pub fn arena_mixer() -> Mixer {
@@ -431,6 +441,7 @@ impl Sim for Arena {
         let (state, increment) = self.audio_rng.raw_parts();
         hasher.write_u64(state);
         hasher.write_u64(increment);
+        self.takes.hash_into(hasher);
     }
 }
 
