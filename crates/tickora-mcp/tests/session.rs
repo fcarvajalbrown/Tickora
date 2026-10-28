@@ -436,6 +436,38 @@ fn the_camera_string_reproduces_the_same_frame() {
 }
 
 #[test]
+fn perspective_defaults_to_the_arena_eye_camera_and_its_string_reproduces_the_frame() {
+    let mut script = Script::new(Era::Modern);
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 1, "inputs": [{"type": "spawn"}, {"type": "spawn"}] }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "width": 96, "height": 64 }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "camera": "perspective -2500 0 170 0 0 0 90", "width": 96, "height": 64 }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "view_mode": "unlit", "width": 96, "height": 64 }),
+    );
+    let replies = script.run(5);
+    let (lit, again, unlit) = (
+        structured(&replies[2]),
+        structured(&replies[3]),
+        structured(&replies[4]),
+    );
+    assert_eq!(lit["camera"], "perspective -2500 0 170 0 0 0 90");
+    assert_eq!(lit["view_mode"], "lit");
+    assert_eq!(lit["show_grid"], false);
+    assert_eq!(lit["pixel_hash"], again["pixel_hash"]);
+    assert_ne!(lit["pixel_hash"], unlit["pixel_hash"]);
+}
+
+#[test]
 fn bad_screenshot_arguments_are_tool_errors() {
     let mut script = Script::new(Era::Modern);
     script.call("tickora_screenshot", json!({ "viewport": "front" }));

@@ -1,15 +1,63 @@
 use std::sync::OnceLock;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
+use tickora_render::camera::DEFAULT_FOV;
+use tickora_render::math::Vec3;
 use tickora_render::{
-    AdapterChoice, Camera, DEFAULT_SIZE, Image, OrthoCamera, Renderer, ViewMode, Viewport,
+    AdapterChoice, Camera, DEFAULT_SIZE, Image, OrthoCamera, PerspectiveCamera, Renderer, Rotator,
+    ViewMode, Viewport,
 };
 
 use crate::host::Host;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum View {
+    Top(OrthoCamera),
+    Perspective {
+        location: Option<Vec3>,
+        rotation: Option<Rotator>,
+        fov: Option<f64>,
+    },
+}
+
+impl View {
+    pub fn viewport(&self) -> Viewport {
+        match self {
+            View::Top(_) => Viewport::Top,
+            View::Perspective { .. } => Viewport::Perspective,
+        }
+    }
+
+    fn from_camera(camera: Camera) -> View {
+        match camera {
+            Camera::Top(camera) => View::Top(camera),
+            Camera::Perspective(camera) => View::Perspective {
+                location: Some(camera.location),
+                rotation: Some(camera.rotation),
+                fov: Some(camera.fov),
+            },
+        }
+    }
+
+    fn perspective(&self, default: &PerspectiveCamera) -> Result<PerspectiveCamera, String> {
+        match *self {
+            View::Top(_) => Err("not a perspective view".to_string()),
+            View::Perspective {
+                location,
+                rotation,
+                fov,
+            } => PerspectiveCamera::new(
+                location.unwrap_or(default.location),
+                rotation.unwrap_or(default.rotation),
+                fov.unwrap_or(default.fov),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shot {
-    pub camera: Camera,
+    pub view: View,
     pub width: u32,
     pub height: u32,
     pub view_mode: ViewMode,
@@ -19,7 +67,7 @@ pub struct Shot {
 impl Default for Shot {
     fn default() -> Self {
         Shot {
-            camera: Camera::default(),
+            view: View::Top(OrthoCamera::default()),
             width: DEFAULT_SIZE,
             height: DEFAULT_SIZE,
             view_mode: ViewMode::Unlit,
@@ -30,6 +78,7 @@ impl Default for Shot {
 
 pub struct Capture {
     pub image: Image,
+    pub camera: Camera,
     pub off_screen: usize,
     pub bucket: String,
     pub adapter: Value,
@@ -44,19 +93,29 @@ pub fn renderer() -> Result<&'static Renderer, String> {
 }
 
 pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
-    let Camera::Top(camera) = &shot.camera else {
-        return Err(PERSPECTIVE_PENDING.to_string());
-    };
     let renderer = renderer()?;
-    let mut scene = host.scene(shot.view_mode);
-    if !shot.show_grid {
-        scene.grid = None;
-    }
-    let (image, layout) = renderer.render(&scene, camera, shot.width, shot.height)?;
+    let (image, camera, off_screen) = match &shot.view {
+        View::Top(camera) => {
+            let mut scene = host.scene(shot.view_mode);
+            if !shot.show_grid {
+                scene.grid = None;
+            }
+            let (image, layout) = renderer.render(&scene, camera, shot.width, shot.height)?;
+            (image, Camera::Top(*camera), layout.off_screen)
+        }
+        view @ View::Perspective { .. } => {
+            let scene = host.scene3();
+            let camera = view.perspective(&scene.camera)?;
+            let (image, off_screen) =
+                renderer.render3(&scene, &camera, shot.view_mode, shot.width, shot.height)?;
+            (image, Camera::Perspective(camera), off_screen)
+        }
+    };
     let info = renderer.info();
     Ok(Capture {
         image,
-        off_screen: layout.off_screen,
+        camera,
+        off_screen,
         bucket: info.bucket(),
         adapter: json!({
             "name": info.name,
@@ -66,12 +125,11 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
     })
 }
 
-const PERSPECTIVE_PENDING: &str =
-    "the perspective viewport is not wired to the simulation yet; use \"top\"";
-
-pub const SHOT_KEYS: [&str; 8] = [
+pub const SHOT_KEYS: [&str; 10] = [
     "viewport",
     "location",
+    "rotation",
+    "fov",
     "ortho_width",
     "camera",
     "width",
@@ -80,105 +138,146 @@ pub const SHOT_KEYS: [&str; 8] = [
     "show_grid",
 ];
 
-pub fn from_args(args: &serde_json::Map<String, Value>) -> Result<Shot, String> {
-    let defaults = Shot::default();
-    let text = |key: &str| -> Result<Option<&str>, String> {
-        match args.get(key) {
-            None => Ok(None),
-            Some(Value::String(text)) => Ok(Some(text)),
-            Some(_) => Err(format!("argument {key:?} must be a string")),
-        }
-    };
-    let number = |key: &str| -> Result<Option<f64>, String> {
-        match args.get(key) {
-            None => Ok(None),
-            Some(value) => value
-                .as_f64()
-                .map(Some)
-                .ok_or_else(|| format!("argument {key:?} must be a number")),
-        }
-    };
-    let size = |key: &str| -> Result<u32, String> {
-        match args.get(key) {
-            None => Ok(DEFAULT_SIZE),
-            Some(value) => value
-                .as_u64()
-                .and_then(|size| u32::try_from(size).ok())
-                .ok_or_else(|| format!("argument {key:?} must be a whole number")),
-        }
-    };
-    let camera = match text("camera")? {
+const CAMERA_PARTS: [&str; 5] = ["viewport", "location", "rotation", "fov", "ortho_width"];
+
+pub fn from_args(args: &Map<String, Value>) -> Result<Shot, String> {
+    let view = match text(args, "camera")? {
         Some(camera) => {
-            if ["viewport", "location", "ortho_width"]
-                .iter()
-                .any(|key| args.contains_key(*key))
-            {
+            if CAMERA_PARTS.iter().any(|key| args.contains_key(*key)) {
                 return Err(
-                    "give either camera or viewport, location and ortho_width, not both"
+                    "give either camera or viewport, location, rotation, fov and ortho_width, not both"
                         .to_string(),
                 );
             }
-            camera.parse()?
+            View::from_camera(camera.parse()?)
         }
-        None => {
-            let viewport = match text("viewport")? {
-                Some(name) => name.parse()?,
-                None => defaults.camera.viewport(),
-            };
-            if viewport == Viewport::Perspective {
-                return Err(PERSPECTIVE_PENDING.to_string());
-            }
-            let top = OrthoCamera::default();
-            let location = match args.get("location") {
-                None => top.location,
-                Some(Value::Array(items)) if items.len() == 2 => {
-                    let mut out = [0.0; 2];
-                    for (slot, item) in out.iter_mut().zip(items) {
-                        *slot = item
-                            .as_f64()
-                            .ok_or("argument \"location\" must be two numbers")?;
-                    }
-                    out
-                }
-                Some(_) => return Err("argument \"location\" must be two numbers".to_string()),
-            };
-            let ortho_width = number("ortho_width")?.unwrap_or(top.ortho_width);
-            Camera::Top(OrthoCamera::new(location, ortho_width)?)
-        }
+        None => match text(args, "viewport")? {
+            Some(name) => view_from_parts(args, name.parse()?)?,
+            None => view_from_parts(args, Viewport::Top)?,
+        },
     };
-    let view_mode = match text("view_mode")? {
+    let viewport = view.viewport();
+    let view_mode = match text(args, "view_mode")? {
         Some(name) => name.parse()?,
-        None => defaults.view_mode,
+        None if viewport == Viewport::Perspective => ViewMode::Lit,
+        None => ViewMode::Unlit,
     };
-    if view_mode == ViewMode::Lit && camera.viewport() == Viewport::Top {
+    if view_mode == ViewMode::Lit && viewport == Viewport::Top {
         return Err("view_mode \"lit\" needs the perspective viewport".to_string());
     }
-    let show_grid = match args.get("show_grid") {
-        None => defaults.show_grid,
-        Some(Value::Bool(flag)) => *flag,
-        Some(_) => return Err("argument \"show_grid\" must be a boolean".to_string()),
+    let show_grid = match (args.get("show_grid"), viewport) {
+        (None, Viewport::Top) => true,
+        (None, _) => false,
+        (Some(_), Viewport::Perspective) => {
+            return Err("argument \"show_grid\" is only for the top viewport".to_string());
+        }
+        (Some(Value::Bool(flag)), _) => *flag,
+        (Some(_), _) => return Err("argument \"show_grid\" must be a boolean".to_string()),
     };
     Ok(Shot {
-        camera,
-        width: size("width")?,
-        height: size("height")?,
+        view,
+        width: size(args, "width")?,
+        height: size(args, "height")?,
         view_mode,
         show_grid,
     })
+}
+
+fn view_from_parts(args: &Map<String, Value>, viewport: Viewport) -> Result<View, String> {
+    let only_for =
+        |keys: &[&str], name: &str| match keys.iter().find(|key| args.contains_key(**key)) {
+            Some(key) => Err(format!("argument {key:?} is only for the {name} viewport")),
+            None => Ok(()),
+        };
+    match viewport {
+        Viewport::Top => {
+            only_for(&["rotation", "fov"], "perspective")?;
+            let top = OrthoCamera::default();
+            let location = numbers::<2>(args, "location")?.unwrap_or(top.location);
+            let ortho_width = number(args, "ortho_width")?.unwrap_or(top.ortho_width);
+            Ok(View::Top(OrthoCamera::new(location, ortho_width)?))
+        }
+        Viewport::Perspective => {
+            only_for(&["ortho_width"], "top")?;
+            let location = numbers::<3>(args, "location")?;
+            let rotation = numbers::<3>(args, "rotation")?
+                .map(|[pitch, yaw, roll]| Rotator::new(pitch, yaw, roll));
+            let fov = number(args, "fov")?;
+            PerspectiveCamera::new(
+                location.unwrap_or_default(),
+                rotation.unwrap_or_default(),
+                fov.unwrap_or(DEFAULT_FOV),
+            )?;
+            Ok(View::Perspective {
+                location,
+                rotation,
+                fov,
+            })
+        }
+    }
+}
+
+fn text<'a>(args: &'a Map<String, Value>, key: &str) -> Result<Option<&'a str>, String> {
+    match args.get(key) {
+        None => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text)),
+        Some(_) => Err(format!("argument {key:?} must be a string")),
+    }
+}
+
+fn number(args: &Map<String, Value>, key: &str) -> Result<Option<f64>, String> {
+    match args.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| format!("argument {key:?} must be a number")),
+    }
+}
+
+fn numbers<const N: usize>(
+    args: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<[f64; N]>, String> {
+    let wrong = || format!("argument {key:?} must be {N} numbers");
+    match args.get(key) {
+        None => Ok(None),
+        Some(Value::Array(items)) if items.len() == N => {
+            let mut out = [0.0; N];
+            for (slot, item) in out.iter_mut().zip(items) {
+                *slot = item.as_f64().ok_or_else(wrong)?;
+            }
+            Ok(Some(out))
+        }
+        Some(_) => Err(wrong()),
+    }
+}
+
+fn size(args: &Map<String, Value>, key: &str) -> Result<u32, String> {
+    match args.get(key) {
+        None => Ok(DEFAULT_SIZE),
+        Some(value) => value
+            .as_u64()
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or_else(|| format!("argument {key:?} must be a whole number")),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn args(value: Value) -> serde_json::Map<String, Value> {
+    fn args(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
     }
 
     #[test]
     fn defaults_are_top_view_256_unlit_with_grid() {
         assert_eq!(from_args(&args(json!({}))).unwrap(), Shot::default());
-        assert_eq!(Shot::default().camera.to_string(), "top 0 0 256");
+        assert_eq!(
+            Shot::default().view,
+            View::Top(OrthoCamera::new([0.0, 0.0], 256.0).unwrap())
+        );
     }
 
     #[test]
@@ -190,20 +289,54 @@ mod tests {
         let string = from_args(&args(json!({ "camera": "top 4.5 -2 64" }))).unwrap();
         assert_eq!(parts, string);
         assert_eq!(
-            parts.camera,
-            Camera::Top(OrthoCamera::new([4.5, -2.0], 64.0).unwrap())
+            parts.view,
+            View::Top(OrthoCamera::new([4.5, -2.0], 64.0).unwrap())
         );
+    }
+
+    #[test]
+    fn perspective_string_and_parts_give_the_same_shot() {
+        let parts = from_args(&args(json!({
+            "viewport": "perspective", "location": [1, 2, 170], "rotation": [-10, 45, 0], "fov": 70
+        })))
+        .unwrap();
+        let string = from_args(&args(
+            json!({ "camera": "perspective 1 2 170 -10 45 0 70" }),
+        ))
+        .unwrap();
+        assert_eq!(parts, string);
+        assert_eq!(parts.view_mode, ViewMode::Lit);
+        assert!(!parts.show_grid);
+    }
+
+    #[test]
+    fn missing_perspective_parts_come_from_the_host_default() {
+        let shot = from_args(&args(json!({ "viewport": "perspective", "fov": 60 }))).unwrap();
+        let default = PerspectiveCamera::new([-5.0, 0.0, 170.0], Rotator::default(), 90.0).unwrap();
+        let camera = shot.view.perspective(&default).unwrap();
+        assert_eq!(camera.location, default.location);
+        assert_eq!(camera.rotation, default.rotation);
+        assert_eq!(camera.fov, 60.0);
     }
 
     #[test]
     fn rejects_bad_arguments() {
         for bad in [
             json!({ "camera": "top 0 0 10", "ortho_width": 5 }),
+            json!({ "camera": "perspective 0 0 0 0 0 0 90", "fov": 60 }),
             json!({ "viewport": "front" }),
-            json!({ "viewport": "perspective" }),
             json!({ "location": [1] }),
             json!({ "location": [1, "a"] }),
+            json!({ "location": [1, 2, 3] }),
             json!({ "ortho_width": 0 }),
+            json!({ "rotation": [0, 0, 0] }),
+            json!({ "fov": 60 }),
+            json!({ "viewport": "perspective", "location": [1, 2] }),
+            json!({ "viewport": "perspective", "rotation": [0, 0] }),
+            json!({ "viewport": "perspective", "fov": 4 }),
+            json!({ "viewport": "perspective", "fov": 171 }),
+            json!({ "viewport": "perspective", "ortho_width": 64 }),
+            json!({ "viewport": "perspective", "show_grid": false }),
             json!({ "width": -4 }),
             json!({ "view_mode": "lit" }),
             json!({ "show_grid": "yes" }),

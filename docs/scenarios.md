@@ -47,7 +47,7 @@ An assertion on a dead entity, an unknown component or an unknown field fails wi
 A screenshot assertion renders the simulation at its tick and compares the frame with a golden image.
 
 - `screenshot` names the golden folder, relative to the scenario file. For an inline scenario over MCP it is relative to the server's working directory.
-- The frame takes the same keys as `tickora_screenshot`: `camera`, or `viewport`, `location` and `ortho_width`, plus `width`, `height`, `view_mode` and `show_grid`, with the same defaults.
+- The frame takes the same keys as `tickora_screenshot`: `camera`, or `viewport`, `location`, `rotation`, `fov` and `ortho_width`, plus `width`, `height`, `view_mode` and `show_grid`, with the same defaults and the same per-viewport rules.
 - The folder holds one golden per bucket, `<platform>_<backend>.png` (for example `windows_dx12.png` or `linux_vulkan.png`), and alternatives `<bucket>.alt1.png`, `<bucket>.alt2.png` and so on. The frame passes if it matches any golden of its bucket; a failure reports the closest one.
 - `tolerance` is a preset name (`"zero"`, the default, is an exact match) or an object: `red`, `green`, `blue` and `alpha` are the largest allowed difference per channel (0 to 255, default 0); `max_local_error` is the largest share of differing pixels in any 16 by 16 block, and `max_global_error` the largest share over the whole frame (0 to 1, default 0); `ignore_aa` (default true) lets a pixel match a golden colour in any of its 8 neighbours.
 - A missing golden fails the assertion and names the file to record. A machine with no graphics adapter cannot evaluate the assertion, so the run is a scenario error.

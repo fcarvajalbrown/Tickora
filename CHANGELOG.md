@@ -14,6 +14,7 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 - `Renderer` draws one frame at a time behind a lock, so it can be shared across threads. Many WARP devices rendering in parallel crashed with an access violation (21 of 25 runs), and one device shared without the lock hung; the 3D render tests now share one renderer.
 - `tools/checker_maps`: checker test patterns written as ambientCG-style colour maps for `psx_bake`; 3 tool tests.
 - `specs/render_fixtures/` and its meshes under `assets/gen/render_fixtures/`, built with `interior_kit` and passing `mesh_gate`.
+- The arena in 3D: `Host::scene3`, with one arena unit as 25 cm, a 1 m cube per entity coloured by hp, the textured floor and two point lights; the default camera stands at eye height 170 cm (Epic's Lyra sample, capsule half-height 90 plus `BaseEyeHeight` 80). `tickora_screenshot` and scenario screenshots take `viewport: "perspective"` with `location`, `rotation` and `fov`, or a perspective `camera` string, and `view_mode: "lit"`.
 
 ## [0.5.0]
 

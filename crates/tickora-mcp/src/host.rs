@@ -1,6 +1,6 @@
 use serde_json::Value;
 use tickora_core::ecs::World;
-use tickora_render::{Scene, ViewMode};
+use tickora_render::{Scene, Scene3, ViewMode};
 
 pub trait Host {
     fn input_schema(&self) -> Value;
@@ -24,4 +24,6 @@ pub trait Host {
     fn world(&self) -> &World;
 
     fn scene(&self, view_mode: ViewMode) -> Scene;
+
+    fn scene3(&self) -> Scene3;
 }

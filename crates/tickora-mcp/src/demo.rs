@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::sync::{Arc, OnceLock};
+
 use serde_json::{Value, json};
 use tickora_core::ecs::{Component, Entity, FieldValue, Fields, World};
 use tickora_core::fx::Fx;
@@ -5,7 +8,11 @@ use tickora_core::hash::StateHasher;
 use tickora_core::input::{InputEvent, InputLog};
 use tickora_core::rng::Rng;
 use tickora_core::sim::{Runner, Sim};
-use tickora_render::{Color, Grid, Quad, Scene, ViewMode};
+use tickora_render::camera::DEFAULT_FOV;
+use tickora_render::{
+    Color, Grid, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Quad, Rotator, Scene,
+    Scene3, ViewMode,
+};
 
 use crate::host::Host;
 
@@ -14,6 +21,18 @@ pub const GRID_LINE: Color = [48, 48, 56, 255];
 pub const GRID_AXIS: Color = [96, 96, 110, 255];
 pub const GRID_SPACING: f64 = 32.0;
 pub const ENTITY_HALF_EXTENT: f64 = 2.0;
+pub const SPAWN_SPAN: u32 = 100;
+pub const UNIT_CM: f64 = 25.0;
+pub const EYE_HEIGHT_CM: f64 = 170.0;
+pub const AMBIENT: [f32; 3] = [0.15, 0.15, 0.15];
+pub const LIGHT_HEIGHT_CM: f64 = 300.0;
+pub const LIGHT_INTENSITY: f32 = 30.0;
+pub const LIGHT_RADIUS_CM: f64 = 2000.0;
+
+const CUBE_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/meshes/cube.glb");
+const FLOOR_GLB: &[u8] = include_bytes!("../../../assets/gen/render_fixtures/meshes/floor.glb");
+const CHECKER_PNG: &[u8] =
+    include_bytes!("../../../assets/gen/render_fixtures/textures/checker.png");
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Position {
@@ -136,6 +155,96 @@ impl Arena {
             quads,
         }
     }
+
+    pub fn scene3(&self) -> Scene3 {
+        let assets = assets();
+        let mut floor = MeshInstance::new(assets.floor.clone(), [0.0; 3]);
+        floor.scale = spawn_span_cm() / assets.floor_width_cm;
+        let mut instances = vec![floor];
+        instances.extend(self.world.query2::<Position, Health>().into_iter().map(
+            |(_, position, health)| {
+                let mut cube = MeshInstance::new(assets.cube.clone(), unreal_location(position));
+                cube.color = Some(hp_color_linear(health.0));
+                cube
+            },
+        ));
+        let quarter = spawn_span_cm() / 4.0;
+        let lights = [-quarter, quarter]
+            .into_iter()
+            .map(|y| PointLight {
+                location: [-quarter, y, LIGHT_HEIGHT_CM],
+                color: [1.0, 1.0, 1.0],
+                intensity: LIGHT_INTENSITY,
+                attenuation_radius: LIGHT_RADIUS_CM,
+            })
+            .collect();
+        let textures = assets
+            .floor
+            .primitives
+            .iter()
+            .map(|primitive| (primitive.material.clone(), assets.checker.clone()))
+            .collect::<BTreeMap<_, _>>();
+        Scene3 {
+            background: BACKGROUND,
+            ambient: AMBIENT,
+            instances,
+            lights,
+            textures,
+            camera: default_camera(),
+        }
+    }
+}
+
+struct Assets {
+    cube: Arc<Mesh>,
+    floor: Arc<Mesh>,
+    floor_width_cm: f64,
+    checker: Arc<Image>,
+}
+
+fn assets() -> &'static Assets {
+    static ASSETS: OnceLock<Assets> = OnceLock::new();
+    ASSETS.get_or_init(|| {
+        let mesh = |name: &str, bytes: &[u8]| {
+            Mesh::from_glb(name, bytes).unwrap_or_else(|e| panic!("embedded {name}.glb: {e}"))
+        };
+        let floor = mesh("floor", FLOOR_GLB);
+        let (min, max) = floor.bounds().expect("embedded floor.glb has vertices");
+        Assets {
+            cube: Arc::new(mesh("cube", CUBE_GLB)),
+            floor_width_cm: f64::from(max[0] - min[0]),
+            floor: Arc::new(floor),
+            checker: Arc::new(
+                Image::from_png(CHECKER_PNG)
+                    .unwrap_or_else(|e| panic!("embedded checker.png: {e}")),
+            ),
+        }
+    })
+}
+
+fn spawn_span_cm() -> f64 {
+    f64::from(SPAWN_SPAN) * UNIT_CM
+}
+
+pub fn unreal_location(position: &Position) -> [f64; 3] {
+    [
+        position.y.to_f64() * UNIT_CM,
+        position.x.to_f64() * UNIT_CM,
+        0.0,
+    ]
+}
+
+pub fn default_camera() -> PerspectiveCamera {
+    PerspectiveCamera::new(
+        [-spawn_span_cm(), 0.0, EYE_HEIGHT_CM],
+        Rotator::default(),
+        DEFAULT_FOV,
+    )
+    .expect("the arena camera is valid")
+}
+
+pub fn hp_color_linear(hp: i32) -> [f32; 4] {
+    hp_color(hp).map(|channel| f32::from(channel) / 255.0)
 }
 
 pub fn hp_color(hp: i32) -> Color {
@@ -159,7 +268,9 @@ impl Sim for Arena {
             match event.input {
                 Command::Spawn => {
                     let e = self.world.spawn();
-                    let spawn = |rng: &mut Rng| Fx::from_int(rng.below(100) as i32 - 50);
+                    let spawn = |rng: &mut Rng| {
+                        Fx::from_int(rng.below(SPAWN_SPAN) as i32 - (SPAWN_SPAN / 2) as i32)
+                    };
                     let (px, py) = (spawn(rng), spawn(rng));
                     let (vx, vy) = (spawn(rng) / Fx::from_int(10), spawn(rng) / Fx::from_int(10));
                     self.world.insert(e, Position { x: px, y: py }).unwrap();
@@ -294,6 +405,10 @@ impl Host for ArenaHost {
     fn scene(&self, view_mode: ViewMode) -> Scene {
         self.runner.sim().scene(view_mode)
     }
+
+    fn scene3(&self) -> Scene3 {
+        self.runner.sim().scene3()
+    }
 }
 
 #[cfg(test)]
@@ -348,6 +463,51 @@ mod tests {
         host.step(&[json!({"type": "spawn"})]).unwrap();
         let before = host.state_hash();
         host.scene(ViewMode::Unlit);
+        host.scene3();
         assert_eq!(host.state_hash(), before);
+    }
+
+    #[test]
+    fn scene3_has_the_floor_then_one_metre_cube_per_entity_coloured_by_hp() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[
+            json!({"type": "spawn"}),
+            json!({"type": "spawn"}),
+            json!({"type": "damage", "amount": 50}),
+        ])
+        .unwrap();
+        let scene = host.scene3();
+        let entities = host.world().query2::<Position, Health>();
+        assert_eq!(scene.instances.len(), 1 + entities.len());
+        let floor = &scene.instances[0];
+        let (floor_min, floor_max) = floor.mesh.bounds().unwrap();
+        let floor_scale = floor.scale as f32;
+        assert_eq!((floor_max[0] - floor_min[0]) * floor_scale, 2500.0);
+        assert_eq!(floor_max[2] * floor_scale, 0.0);
+        for (cube, (_, position, health)) in scene.instances[1..].iter().zip(entities) {
+            assert_eq!(
+                cube.mesh.bounds().unwrap(),
+                ([-50.0, -50.0, 0.0], [50.0, 50.0, 100.0])
+            );
+            assert_eq!(cube.location, unreal_location(position));
+            assert_eq!(cube.color, Some(hp_color_linear(health.0)));
+        }
+        assert_eq!(scene.lights.len(), 2);
+        assert!(scene.textures.contains_key("dirt"));
+        assert_eq!(scene.camera, default_camera());
+        assert_eq!(scene.camera.location, [-2500.0, 0.0, EYE_HEIGHT_CM]);
+    }
+
+    #[test]
+    fn top_view_matches_a_camera_looking_straight_down() {
+        let position = Position {
+            x: Fx::from_int(2),
+            y: Fx::from_int(-3),
+        };
+        assert_eq!(unreal_location(&position), [-75.0, 50.0, 0.0]);
+        let [_, right, up] = Rotator::new(-90.0, 0.0, 0.0).axes();
+        let close = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-12);
+        assert!(close(right, [0.0, 1.0, 0.0]));
+        assert!(close(up, [1.0, 0.0, 0.0]));
     }
 }
