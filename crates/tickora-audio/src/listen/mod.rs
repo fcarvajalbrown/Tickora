@@ -5,6 +5,7 @@ pub mod loudness;
 pub mod onsets;
 pub mod reading;
 pub mod seam;
+pub mod sheet;
 pub mod spectrum;
 pub mod stats;
 pub mod tones;
