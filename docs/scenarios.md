@@ -67,8 +67,12 @@ The host renders one block of audio per tick, offline: 800 stereo samples at 48,
 | RMS | `"channel": "left"` or `"right"`, `"rms_dbfs": { "min": x, "max": y }` |
 | Voices | `"voices": <int comparison>`, the most voices active in any tick of the range |
 | Clipped | `"clipped": <int comparison>`, samples the master ceiling clamped |
+| Loudness | `"loudness_lufs": { "min": x, "max": y }`, integrated LUFS over the range as listen.py measures it |
+| Onsets | `"onsets": <int comparison>`, transients found in the range (a 10 dB rise over the last 0.3 s) |
+| Sound | `"sound": "<name>"`, `"starts": <int comparison>`, voice starts of that sound in the range |
 
 - Levels are dBFS against 2^23, computed from exact integer peaks and sums of squares; only the final dB value is a float. A silent range reads `null`: it passes a `max` and fails a `min`.
+- Loudness, onsets and sound are heard: the host replays the range once per run and every heard check on that range shares the result. A range gated to nothing (under 0.4 s, or silent) reads `null` loudness, with the same `min` and `max` rule. Onsets need at least 3 ticks; a shorter range fails with the reason. Loudness reads about 0.25 dB below a strict BS.1770 meter, because listen.py's K-weighting is an approximation that the port keeps.
 - A golden WAV is never compared. The hash pins the audio exactly; `--wav` writes it out to listen to.
 
 ## Running
@@ -76,6 +80,7 @@ The host renders one block of audio per tick, offline: 800 stereo samples at 48,
 - CLI: `tickora-mcp scenario <file>...`, with `--json` for the full report. Exit code 0 when every assertion passed, 1 when one failed, 2 when a file is malformed. With no arguments the binary serves MCP on stdio.
 - Recording goldens: `--record` writes or replaces each screenshot's `<bucket>.png`, and `--record-alternative` adds the next `<bucket>.altN.png`. A recorded screenshot counts as passed and prints `RECORDED <path>`. The two flags cannot be combined, and the MCP tool never records.
 - Listening: `--wav <path>` writes the whole run of one scenario file as a 24-bit stereo WAV and prints `WROTE <path>`. The host replays its input log on a fresh simulation to produce the samples, so a run of any length keeps only per-tick summaries in memory.
+- Hearing: `--listen` prints, after the report, the reading of the whole run of one file (listen.py's summary with ticks beside seconds) and the sound list: every voice start with its take, gain, pitch, distance and per-channel level, every end, and every start dropped at the voice cap. `--sheet <path>` writes the spectrogram PNG: log frequency from 20 Hz to 20 kHz, a short-term loudness strip and a centroid strip, cyan transient marks along the top and a dashed line per sound start. With `--json` the sound list, every measure and the reading go into the report as `hearing`. `--wav`, `--listen` and `--sheet` share one replay pass. A run is heard up to 36,000 ticks.
 - MCP: `tickora_run_scenario` with exactly one of `path` (relative to the server's working directory) or `scenario` (the object inline). It runs on a fresh simulation and leaves the live one untouched. A failed assertion is a normal result with `passed: false`; a malformed scenario is a tool error.
 
 Every assertion is evaluated; a run does not stop at the first failure.
