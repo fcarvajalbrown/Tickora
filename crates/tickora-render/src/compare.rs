@@ -24,11 +24,30 @@ impl Tolerance {
         ignore_aa: false,
     };
 
+    pub const LOW: Tolerance = Tolerance::unreal(16);
+    pub const MEDIUM: Tolerance = Tolerance::unreal(24);
+    pub const HIGH: Tolerance = Tolerance::unreal(32);
+
+    const fn unreal(channel: u8) -> Tolerance {
+        Tolerance {
+            red: channel,
+            green: channel,
+            blue: channel,
+            alpha: channel,
+            max_local_error: 0.10,
+            max_global_error: 0.02,
+            ignore_aa: true,
+        }
+    }
+
     pub fn preset(name: &str) -> Result<Tolerance, String> {
         match name {
             "zero" => Ok(Tolerance::ZERO),
+            "low" => Ok(Tolerance::LOW),
+            "medium" => Ok(Tolerance::MEDIUM),
+            "high" => Ok(Tolerance::HIGH),
             other => Err(format!(
-                "unknown tolerance preset {other:?}; expected \"zero\""
+                "unknown tolerance preset {other:?}; expected \"zero\", \"low\", \"medium\" or \"high\""
             )),
         }
     }
@@ -266,6 +285,37 @@ mod tests {
     #[test]
     fn presets_parse() {
         assert_eq!(Tolerance::preset("zero").unwrap(), Tolerance::ZERO);
+        assert_eq!(Tolerance::preset("low").unwrap(), Tolerance::LOW);
+        assert_eq!(Tolerance::preset("medium").unwrap(), Tolerance::MEDIUM);
+        assert_eq!(Tolerance::preset("high").unwrap(), Tolerance::HIGH);
         assert!(Tolerance::preset("huge").is_err());
+    }
+
+    #[test]
+    fn presets_follow_unreal_automation_screenshot_options() {
+        for (preset, channel) in [
+            (Tolerance::LOW, 16),
+            (Tolerance::MEDIUM, 24),
+            (Tolerance::HIGH, 32),
+        ] {
+            assert_eq!(preset, custom(channel, 0.10, 0.02, true));
+        }
+    }
+
+    #[test]
+    fn low_absorbs_shading_rounding_and_rejects_a_wrong_colour() {
+        let golden = filled(32, 32, [100, 100, 100, 255]);
+        let mut rounded = golden.clone();
+        for x in 0..32 {
+            set(&mut rounded, x, 3, [101, 99, 101, 255]);
+        }
+        assert!(compare(&rounded, &golden, &Tolerance::LOW).unwrap().passed);
+        let mut wrong = golden.clone();
+        for y in 0..32 {
+            for x in 0..32 {
+                set(&mut wrong, x, y, [140, 100, 100, 255]);
+            }
+        }
+        assert!(!compare(&wrong, &golden, &Tolerance::HIGH).unwrap().passed);
     }
 }

@@ -1,6 +1,6 @@
 # Tolerance presets: adapter measurement
 
-Phase 6 item 6 adds `low`, `medium` and `high` tolerance presets for the 3D goldens. This page holds the measurement they are derived from (design: `docs/design/phase-6-renderer.md`, "Tolerance presets"). The criterion that turns it into numbers is Felipe's and is recorded below once picked.
+Phase 6 item 6 adds `low`, `medium` and `high` tolerance presets for the 3D goldens. This page holds the measurement they are derived from (design: `docs/design/phase-6-renderer.md`, "Tolerance presets"). The criterion that turns it into numbers is Felipe's, recorded under "Criterion".
 
 ## What was measured
 
@@ -28,6 +28,18 @@ Phase 6 item 6 adds `low`, `medium` and `high` tolerance presets for the 3D gold
 - Raising the channel tolerance from 1 to 8 changes nothing in these shots. At 16, with the neighbour search, the pairs with `warp-local` drop to zero.
 - WARP on this Windows 10 machine and WARP on `windows-latest` are not the same adapter: they differ in up to 0.02% of the pixels, with channel differences up to 194. A golden recorded on one does not match the other exactly.
 - `unlit` shots differ in a few pixels (at most 0.02% of the frame and 0.78% of a block, channel difference 80), all absorbed by the neighbour search.
+
+## Criterion
+
+Felipe chose Unreal's numbers, following the project rule to copy Unreal where it fits. Unreal 5.5 sets the presets in `FAutomationScreenshotOptions::SetToleranceAmounts` (`Engine/Source/Developer/FunctionalTesting/Public/AutomationScreenshotOptions.h`): Low 16, Medium 24 and High 32 per channel, with a brightness window (16 to 240, 24 to 220, 64 to 96) Tickora does not have. The block and frame limits are not part of the preset; the options default them to 0.10 and 0.02 with the anti-aliasing search on, and Tickora puts those in every preset.
+
+| Preset | Per channel | Worst block | Frame | Neighbour search |
+| --- | --- | --- | --- | --- |
+| `low` | 16 | 0.10 | 0.02 | on |
+| `medium` | 24 | 0.10 | 0.02 | on |
+| `high` | 32 | 0.10 | 0.02 | on |
+
+The table is the check: at channel tolerance 16 with the neighbour search, the worst pair is 0.00% of the frame and 0.78% of a block, so `low` passes every adapter pair measured. The price is that `low` also lets shading drift up to 16 units before a test fails.
 
 ## Results
 

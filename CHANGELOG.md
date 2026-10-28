@@ -6,6 +6,8 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 
 ### Added
 
+- Tolerance presets `low`, `medium` and `high` from Unreal's `FAutomationScreenshotOptions`: 16, 24 and 32 per channel, block 0.10, frame 0.02, neighbour search on. Chosen by Felipe after measuring the arena's 3D shots on four adapters (`docs/research/tolerance-presets.md`); `low` passes every pair.
+- `tools/tolerance_table`: compares the goldens of labelled adapter folders with `tickora_render::compare`, with and without the neighbour search, and sweeps per-channel tolerances.
 - `perspective` viewport after Unreal's `LVT_Perspective`: camera string `perspective <x> <y> <z> <pitch> <yaw> <roll> <fov>` in BugItGo order, Unreal axes (centimetres, Z up, X forward), horizontal field of view, reversed-Z projection with an infinite far plane and a 10 cm near plane.
 - GLB mesh reader on `gltf` 1.4.1: meshkit's metres, Y up, map to Unreal centimetres, Z up; skins, morph targets, sparse accessors and external buffers are rejected by name.
 - Depth buffer (`Depth32Float`, reversed Z) and mesh drawing: `Scene3` of mesh instances with location, rotation, scale and colour override, drawn per material in `unlit` or `wireframe` (triangle edges as a line list), with `off_screen` counted against the view frustum.
