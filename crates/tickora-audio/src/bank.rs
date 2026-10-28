@@ -9,12 +9,56 @@ use crate::graph::SubmixId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SoundId(pub u32);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pick {
+    NoRepeats(u32),
+    WithoutReplacement,
+}
+
+impl Default for Pick {
+    fn default() -> Self {
+        Pick::NoRepeats(1)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    Sine { hz: Fx },
-    Square { hz: Fx },
+    Sine {
+        hz: Fx,
+    },
+    Square {
+        hz: Fx,
+    },
     Noise,
-    Pcm { samples: Arc<[i32]>, rate: u32 },
+    Pcm {
+        samples: Arc<[i32]>,
+        rate: u32,
+    },
+    Takes {
+        takes: Arc<[Arc<[i32]>]>,
+        rate: u32,
+        weights: Arc<[u32]>,
+        pick: Pick,
+    },
+}
+
+impl Source {
+    pub fn pcm(&self, take: u32) -> Option<(&[i32], u32)> {
+        match self {
+            Source::Pcm { samples, rate } => Some((samples, *rate)),
+            Source::Takes { takes, rate, .. } => takes
+                .get(take as usize)
+                .map(|samples| (&samples[..], *rate)),
+            _ => None,
+        }
+    }
+
+    pub fn take_count(&self) -> u32 {
+        match self {
+            Source::Takes { takes, .. } => takes.len() as u32,
+            _ => 1,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -146,19 +190,29 @@ fn validate(name: &str, def: &SoundDef) -> Result<(), String> {
         Source::Sine { hz } | Source::Square { hz } if *hz < Fx::ZERO => {
             Err(format!("sound {name:?}: frequency must not be negative"))
         }
-        Source::Pcm { samples, rate } => {
-            if *rate == 0 || samples.is_empty() {
-                return Err(format!(
-                    "sound {name:?}: PCM needs samples and a rate above 0"
-                ));
+        Source::Pcm { samples, rate } => validate_pcm(name, samples, *rate),
+        Source::Takes { takes, rate, .. } => {
+            if takes.is_empty() {
+                return Err(format!("sound {name:?}: takes need at least one take"));
             }
-            if samples.iter().any(|sample| sample.abs() > MAX_SAMPLE) {
-                return Err(format!("sound {name:?}: PCM samples exceed 24 bits"));
-            }
-            Ok(())
+            takes
+                .iter()
+                .try_for_each(|samples| validate_pcm(name, samples, *rate))
         }
         _ => Ok(()),
     }
+}
+
+fn validate_pcm(name: &str, samples: &[i32], rate: u32) -> Result<(), String> {
+    if rate == 0 || samples.is_empty() {
+        return Err(format!(
+            "sound {name:?}: PCM needs samples and a rate above 0"
+        ));
+    }
+    if samples.iter().any(|sample| sample.abs() > MAX_SAMPLE) {
+        return Err(format!("sound {name:?}: PCM samples exceed 24 bits"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

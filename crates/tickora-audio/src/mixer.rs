@@ -38,6 +38,7 @@ struct Voice {
     gain: Fx,
     pitch: Fx,
     seed: u64,
+    take: u32,
     played: u64,
     end: Option<u64>,
     stopping: bool,
@@ -63,6 +64,7 @@ impl Voice {
             gain: play.gain,
             pitch: play.pitch,
             seed: play.seed,
+            take: play.take,
             played: 0,
             end: None,
             stopping: false,
@@ -78,8 +80,8 @@ impl Voice {
     }
 
     fn one_shot_length(&self, def: &SoundDef, rate: u32) -> u64 {
-        match &def.source {
-            Source::Pcm { samples, .. } => {
+        match def.source.pcm(self.take) {
+            Some((samples, _)) => {
                 let step = self.rates(def, rate).step;
                 if step == 0 {
                     return 0;
@@ -87,7 +89,7 @@ impl Voice {
                 let span = u128::from(samples.len() as u64) << 32;
                 span.div_ceil(u128::from(step)) as u64
             }
-            _ => u64::from(def.envelope.duration),
+            None => u64::from(def.envelope.duration),
         }
     }
 
@@ -104,11 +106,11 @@ impl Voice {
             }
             _ => 0,
         };
-        let step = match &def.source {
-            Source::Pcm { rate: source, .. } => {
-                (u128::from(*source) * pitch / u128::from(rate)).min(u128::from(u64::MAX)) as u64
+        let step = match (&def.source, def.source.pcm(self.take)) {
+            (_, Some((_, source))) => {
+                (u128::from(source) * pitch / u128::from(rate)).min(u128::from(u64::MAX)) as u64
             }
-            Source::Noise => pitch.min(u128::from(u64::MAX)) as u64,
+            (Source::Noise, None) => pitch.min(u128::from(u64::MAX)) as u64,
             _ => 0,
         };
         Rates { increment, step }
@@ -165,7 +167,10 @@ impl Voice {
                 }
                 value
             }
-            Source::Pcm { samples, .. } => {
+            Source::Pcm { .. } | Source::Takes { .. } => {
+                let Some((samples, _)) = def.source.pcm(self.take) else {
+                    return 0;
+                };
                 let looping = matches!(self.origin, Origin::Emitter(_));
                 let span = (samples.len() as u64) << 32;
                 if looping && self.position >= span {
@@ -185,6 +190,7 @@ struct VoiceParams {
     gain: Fx,
     pitch: Fx,
     seed: u64,
+    take: u32,
 }
 
 fn noise_sample(rng: &mut Rng) -> i32 {
@@ -404,6 +410,7 @@ impl Mixer {
                 gain: play.gain,
                 pitch: play.pitch,
                 seed: play.seed,
+                take: play.take,
             };
             dropped += self.start(play.sound, Origin::At(play.location), params);
         }
@@ -455,6 +462,7 @@ impl Mixer {
                     gain: emitter.gain,
                     pitch: emitter.pitch,
                     seed: emitter.seed,
+                    take: 0,
                 };
                 dropped += self.start(emitter.sound, Origin::Emitter(entity), params);
             }
@@ -545,6 +553,7 @@ mod tests {
                     gain,
                     pitch: Fx::ONE,
                     seed: 1,
+                    take: 0,
                 },
             )
             .unwrap();
@@ -649,6 +658,7 @@ mod tests {
                     gain: Fx::ONE,
                     pitch: Fx::from_ratio(1, 2),
                     seed: 0,
+                    take: 0,
                 },
             )
             .unwrap();
@@ -656,6 +666,43 @@ mod tests {
         let left: Vec<i32> = block.frames.iter().take(9).map(|f| f[0]).collect();
         assert_eq!(left, [0, 500, 1000, 1500, 2000, 2500, 3000, 3000, 0]);
         assert_eq!(mixer.voices(), 0);
+    }
+
+    #[test]
+    fn a_play_reads_the_recording_of_its_own_take() {
+        let takes: Vec<Arc<[i32]>> = vec![vec![1_000; 400].into(), vec![-2_000; 400].into()];
+        let sound = def(
+            Source::Takes {
+                takes: takes.into(),
+                rate: 48_000,
+                weights: Vec::new().into(),
+                pick: crate::bank::Pick::default(),
+            },
+            0,
+        );
+        let mut mixer = mixer(vec![sound], MixGraph::default());
+        let mut world = world();
+        let entity = world.spawn();
+        world
+            .insert(
+                entity,
+                PlaySound {
+                    location: Location::default(),
+                    sound: SoundId(0),
+                    gain: Fx::ONE,
+                    pitch: Fx::ONE,
+                    seed: 0,
+                    take: 1,
+                },
+            )
+            .unwrap();
+        let block = mixer.render(&world);
+        assert!(
+            block.frames[..400]
+                .iter()
+                .all(|frame| frame[0] < 0 && frame[1] < 0)
+        );
+        assert!(block.frames[400..].iter().all(|frame| *frame == [0, 0]));
     }
 
     #[test]

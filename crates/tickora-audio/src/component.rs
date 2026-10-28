@@ -4,7 +4,8 @@ use tickora_core::hash::StateHasher;
 use tickora_core::noise::Location;
 use tickora_core::rng::Rng;
 
-use crate::bank::{SoundBank, SoundId};
+use crate::bank::{SoundBank, SoundId, Source};
+use crate::take::TakeHistory;
 
 pub const AUDIO_STREAM: u64 = 0x0061_7564_696f;
 
@@ -21,6 +22,7 @@ pub struct PlaySound {
     pub gain: Fx,
     pub pitch: Fx,
     pub seed: u64,
+    pub take: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,11 +54,13 @@ impl Component for PlaySound {
     fn hash_into(&self, hasher: &mut StateHasher) {
         Component::hash_into(&self.location, hasher);
         hash_voice(self.sound, self.gain, self.pitch, self.seed, hasher);
+        hasher.write_u32(self.take);
     }
 
     fn fields(&self) -> Fields {
         let mut fields = Component::fields(&self.location);
         fields.extend(voice_fields(self.sound, self.gain, self.pitch, self.seed));
+        fields.push(("take", FieldValue::Int(i64::from(self.take))));
         fields
     }
 }
@@ -103,6 +107,7 @@ pub fn play(
     world: &mut World,
     bank: &SoundBank,
     rng: &mut Rng,
+    takes: &mut TakeHistory,
     sound: SoundId,
     location: Location,
 ) -> Result<Entity, String> {
@@ -110,6 +115,15 @@ pub fn play(
         .get(sound)
         .ok_or_else(|| format!("sound {} is not in the bank", sound.0))?;
     let (gain, pitch, seed) = def.variation.draw(rng);
+    let take = match &def.source {
+        Source::Takes {
+            takes: recordings,
+            weights,
+            pick,
+            ..
+        } => takes.pick(rng, sound, recordings.len() as u32, weights, *pick),
+        _ => 0,
+    };
     let entity = world.spawn();
     world
         .insert(
@@ -120,6 +134,7 @@ pub fn play(
                 gain,
                 pitch,
                 seed,
+                take,
             },
         )
         .map_err(|e| e.to_string())?;
@@ -130,6 +145,12 @@ pub fn emitter(bank: &SoundBank, rng: &mut Rng, sound: SoundId) -> Result<SoundE
     let def = bank
         .get(sound)
         .ok_or_else(|| format!("sound {} is not in the bank", sound.0))?;
+    if let Source::Takes { .. } = def.source {
+        return Err(format!(
+            "sound {} has takes; looping emitters play one PCM or oscillator source",
+            sound.0
+        ));
+    }
     let (gain, pitch, seed) = def.variation.draw(rng);
     Ok(SoundEmitter {
         sound,
@@ -192,19 +213,73 @@ mod tests {
         let listener = world.spawn();
         world.insert(listener, Listener::default()).unwrap();
         let mut rng = audio_rng(1);
+        let mut takes = TakeHistory::new();
         let here = Location::default();
-        let a = play(&mut world, &bank, &mut rng, SoundId(0), here).unwrap();
-        let b = play(&mut world, &bank, &mut rng, SoundId(0), here).unwrap();
+        let a = play(&mut world, &bank, &mut rng, &mut takes, SoundId(0), here).unwrap();
+        let b = play(&mut world, &bank, &mut rng, &mut takes, SoundId(0), here).unwrap();
         let (first, second) = (
             *world.get::<PlaySound>(a).unwrap(),
             *world.get::<PlaySound>(b).unwrap(),
         );
         assert_ne!(first.seed, second.seed);
         assert!(first.gain >= Fx::from_ratio(1, 2) && first.gain < Fx::ONE);
-        assert!(play(&mut world, &bank, &mut rng, SoundId(9), here).is_err());
+        assert!(play(&mut world, &bank, &mut rng, &mut takes, SoundId(9), here).is_err());
+        assert_eq!(takes, TakeHistory::new());
         clear(&mut world);
         assert_eq!(world.entity_count(), 1);
         assert!(world.is_alive(listener));
+    }
+
+    fn takes_bank() -> SoundBank {
+        let mut bank = SoundBank::new();
+        let take = |value: i32| -> std::sync::Arc<[i32]> { vec![value; 4].into() };
+        bank.add(
+            "hit",
+            SoundDef {
+                source: Source::Takes {
+                    takes: vec![take(1), take(2), take(3)].into(),
+                    rate: 48_000,
+                    weights: Vec::new().into(),
+                    pick: crate::bank::Pick::NoRepeats(1),
+                },
+                envelope: Envelope::default(),
+                variation: Variation::default(),
+                attenuation: Attenuation::None,
+                submix: SubmixId::MASTER,
+            },
+        )
+        .unwrap();
+        bank
+    }
+
+    #[test]
+    fn a_play_with_takes_records_a_take_that_never_repeats_in_a_row() {
+        let bank = takes_bank();
+        let mut world = world();
+        let mut rng = audio_rng(4);
+        let mut takes = TakeHistory::new();
+        let mut last = None;
+        for _ in 0..200 {
+            let entity = play(
+                &mut world,
+                &bank,
+                &mut rng,
+                &mut takes,
+                SoundId(0),
+                Location::default(),
+            )
+            .unwrap();
+            let take = world.get::<PlaySound>(entity).unwrap().take;
+            assert!(take < 3 && Some(take) != last);
+            last = Some(take);
+            clear(&mut world);
+        }
+        assert_eq!(takes.recent(SoundId(0)), [last.unwrap()]);
+    }
+
+    #[test]
+    fn an_emitter_refuses_a_sound_with_takes() {
+        assert!(emitter(&takes_bank(), &mut audio_rng(1), SoundId(0)).is_err());
     }
 
     #[test]

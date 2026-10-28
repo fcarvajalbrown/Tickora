@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tickora_audio::component::{self, audio_rng};
 use tickora_audio::{
     Attenuation, AudioFormat, Capture, Envelope, Listener, MixGraph, Mixer, SoundBank, SoundDef,
-    Source, SubmixDef, Variation,
+    Source, SubmixDef, TakeHistory, Variation,
 };
 use tickora_core::ecs::World;
 use tickora_core::fx::Fx;
@@ -139,6 +139,7 @@ fn render() -> Capture {
         )
         .unwrap();
     let mut rng = audio_rng(0xC0FFEE);
+    let mut takes = TakeHistory::new();
     let mut capture = Capture::new(AudioFormat::DEFAULT);
     let mut hum = None;
     for tick in 0..TICKS {
@@ -154,14 +155,46 @@ fn render() -> Capture {
                 hum = Some(entity);
             }
             5 | 70 => {
-                component::play(&mut world, &bank, &mut rng, sound("tone"), at(300, 900)).unwrap();
+                component::play(
+                    &mut world,
+                    &bank,
+                    &mut rng,
+                    &mut takes,
+                    sound("tone"),
+                    at(300, 900),
+                )
+                .unwrap();
             }
             12 => {
-                component::play(&mut world, &bank, &mut rng, sound("buzz"), at(0, 0)).unwrap();
-                component::play(&mut world, &bank, &mut rng, sound("hit"), at(-600, -200)).unwrap();
+                component::play(
+                    &mut world,
+                    &bank,
+                    &mut rng,
+                    &mut takes,
+                    sound("buzz"),
+                    at(0, 0),
+                )
+                .unwrap();
+                component::play(
+                    &mut world,
+                    &bank,
+                    &mut rng,
+                    &mut takes,
+                    sound("hit"),
+                    at(-600, -200),
+                )
+                .unwrap();
             }
             40 => {
-                component::play(&mut world, &bank, &mut rng, sound("drip"), at(150, 50)).unwrap();
+                component::play(
+                    &mut world,
+                    &bank,
+                    &mut rng,
+                    &mut takes,
+                    sound("drip"),
+                    at(150, 50),
+                )
+                .unwrap();
             }
             200 => {
                 world.despawn(hum.unwrap());
