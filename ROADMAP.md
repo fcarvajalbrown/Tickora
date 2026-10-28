@@ -26,7 +26,7 @@ Status: **In Progress**. ADRs 0002 and 0003.
 3. Done. Depth buffer and mesh drawing: reversed-Z `Depth32Float`, `Scene3` instances from meshkit GLBs, `unlit` and `wireframe`; 6 render tests pass on RTX 2050 and WARP locally and in CI run 40599315260 (WARP, lavapipe).
 4. Done. Textures from the PSX bake: by material name, nearest and repeat, no mipmaps; a checker through `checker_maps` and `psx_bake` renders its exact texels on RTX 2050 and WARP locally and in CI run 40599885889 (WARP, lavapipe).
 5. Done. Point lights with distance falloff (lamp, generator): `lit` view mode, up to 16 lights, Karis 2013 equation (9); 5 lighting render tests pass on RTX 2050 and WARP locally and in CI run 40602838231 (WARP, lavapipe).
-6. Not Started. Tolerance presets `low`, `medium`, `high`, measured against the CI software adapters.
+6. Done. Tolerance presets `low`, `medium`, `high`: Unreal's 16, 24, 32 per channel, block 0.10, frame 0.02 (Felipe); `low` passes all four adapters in `docs/research/tolerance-presets.md`; CI run 40618435179.
 7. Not Started. 3D goldens in scenarios; the top view kept as a debug view.
 
 ## Phase 7: audio, 0.7.0
