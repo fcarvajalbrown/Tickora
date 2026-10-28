@@ -10,7 +10,7 @@ from song_licences import licence_name
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Build the game's credits file from a JSON spec: fixed entries plus entries read from asset manifests, merged by section title.")
+    parser = argparse.ArgumentParser(description="Build the game's credits file from a JSON spec: fixed entries plus entries read from asset manifests, merged by section title; JSON, or Markdown when --out ends in .md.")
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--out", type=Path, required=True)
@@ -105,11 +105,26 @@ def build(spec, root):
     return {"header": spec["header"], "sections": sections}
 
 
+def markdown(credits):
+    title, *header = credits["header"]
+    blocks = [f"# {title}", "\n\n".join(header)]
+    for section in credits["sections"]:
+        blocks.append(f"## {section['title']}")
+        blocks.extend(f"**{entry['name']}**\n\n" + "\n".join(f"- {line}" for line in entry["lines"]) for entry in section["entries"])
+    return "\n\n".join(blocks) + "\n"
+
+
+def render(credits, out):
+    if out.suffix.lower() == ".md":
+        return markdown(credits)
+    return json.dumps(credits, indent=1, ensure_ascii=False) + "\n"
+
+
 def main(argv=None):
     args = parse_args(argv)
     credits = build(json.loads(args.spec.read_text(encoding="utf-8")), args.root)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(credits, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    args.out.write_text(render(credits, args.out), encoding="utf-8", newline="\n")
     print(f"{sum(len(section['entries']) for section in credits['sections'])} entries in {len(credits['sections'])} sections -> {args.out}")
     return 0
 

@@ -93,6 +93,12 @@ class BuildTest(unittest.TestCase):
             credits = build_credits.build(spec, Path(folder))
         self.assertEqual([entry["name"] for entry in credits["sections"][0]["entries"]], ["c", "d"])
 
+    def test_markdown_puts_the_title_first_then_each_entry_with_its_lines(self):
+        credits = {"header": ["Game", "made by A", "© A. All rights reserved."], "sections": [{"title": "Sound", "entries": [{"name": "Sounds by B", "lines": ["Site, site.com", "Thanks."]}]}]}
+        self.assertEqual(build_credits.markdown(credits), "# Game\n\nmade by A\n\n© A. All rights reserved.\n\n## Sound\n\n**Sounds by B**\n\n- Site, site.com\n- Thanks.\n")
+        self.assertEqual(build_credits.render(credits, Path("x.md")), build_credits.markdown(credits))
+        self.assertTrue(build_credits.render(credits, Path("x.json")).startswith("{"))
+
 
 if __name__ == "__main__":
     unittest.main()
