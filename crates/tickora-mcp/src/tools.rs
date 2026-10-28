@@ -329,7 +329,7 @@ fn listen<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
         let file = std::fs::File::create(path)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         let mut out = std::io::BufWriter::new(file);
-        host.write_wav(from, to, &mut out)?;
+        crate::host::write_wav(host, from, to, &mut out)?;
         std::io::Write::flush(&mut out)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }

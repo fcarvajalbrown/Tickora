@@ -10,7 +10,7 @@ use crate::bank::{Attenuation, Envelope, SoundBank, SoundDef, SoundId, Source};
 use crate::capture::BlockSummary;
 use crate::component::{Listener, PlaySound, SoundEmitter, audio_rng};
 use crate::format::{AudioFormat, MAX_SAMPLE};
-use crate::graph::MixGraph;
+use crate::graph::{MixGraph, SubmixId};
 use crate::math::{QUARTER, cosine, isqrt, mul_fx, ratio_fx, sine, sine_table};
 
 pub const MAX_VOICES: usize = 64;
@@ -23,16 +23,39 @@ const PAN_ONE: i64 = 1 << 30;
 pub struct Block {
     pub frames: Vec<[i32; 2]>,
     pub summary: BlockSummary,
+    pub events: Vec<VoiceEvent>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin {
+pub struct VoiceStart {
+    pub id: u64,
+    pub sound: SoundId,
+    pub take: u32,
+    pub origin: Origin,
+    pub gain: Fx,
+    pub pitch: Fx,
+    pub distance: Option<u128>,
+    pub gains: [i64; 2],
+    pub submix: SubmixId,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoiceEvent {
+    Start(VoiceStart),
+    End { id: u64, stopped: bool },
+    Dropped { sound: SoundId, origin: Origin },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
     At(Location),
     Emitter(Entity),
 }
 
 #[derive(Clone, Debug)]
 struct Voice {
+    id: u64,
+    reported: bool,
     sound: SoundId,
     origin: Origin,
     gain: Fx,
@@ -55,10 +78,19 @@ struct Rates {
 }
 
 impl Voice {
-    fn new(def: &SoundDef, sound: SoundId, origin: Origin, play: VoiceParams, rate: u32) -> Self {
+    fn new(
+        id: u64,
+        def: &SoundDef,
+        sound: SoundId,
+        origin: Origin,
+        play: VoiceParams,
+        rate: u32,
+    ) -> Self {
         let mut noise = audio_rng(play.seed);
         let held = noise_sample(&mut noise);
         let mut voice = Voice {
+            id,
+            reported: false,
             sound,
             origin,
             gain: play.gain,
@@ -241,6 +273,20 @@ fn delta(to: Fx, from: Fx) -> i128 {
     (i128::from(to.raw()) - i128::from(from.raw())) >> DISTANCE_SHIFT
 }
 
+pub fn listener_distance(listener: Option<&Listener>, location: Option<Location>) -> Option<u128> {
+    let (listener, location) = (listener?, location?);
+    let at = listener.location;
+    let squared = [
+        delta(location.x, at.x),
+        delta(location.y, at.y),
+        delta(location.z, at.z),
+    ]
+    .iter()
+    .map(|d| d.unsigned_abs() * d.unsigned_abs())
+    .sum::<u128>();
+    Some(isqrt(squared) >> DISTANCE_SHIFT)
+}
+
 pub fn spatial_gains(
     attenuation: &Attenuation,
     listener: Option<&Listener>,
@@ -287,6 +333,8 @@ pub struct Mixer {
     graph: MixGraph,
     voices: Vec<Voice>,
     last_plays: Vec<Entity>,
+    next_id: u64,
+    events: Vec<VoiceEvent>,
 }
 
 impl Mixer {
@@ -303,6 +351,8 @@ impl Mixer {
             graph,
             voices: Vec::new(),
             last_plays: Vec::new(),
+            next_id: 0,
+            events: Vec::new(),
         })
     }
 
@@ -312,6 +362,10 @@ impl Mixer {
 
     pub fn bank(&self) -> &Arc<SoundBank> {
         &self.bank
+    }
+
+    pub fn graph(&self) -> &MixGraph {
+        &self.graph
     }
 
     pub fn voices(&self) -> usize {
@@ -341,6 +395,20 @@ impl Mixer {
             };
             let [left, right] = spatial_gains(&def.attenuation, listener.as_ref(), location)
                 .map(|channel| mul_fx(channel, voice.gain.raw()));
+            if !voice.reported {
+                voice.reported = true;
+                self.events.push(VoiceEvent::Start(VoiceStart {
+                    id: voice.id,
+                    sound: voice.sound,
+                    take: voice.take,
+                    origin: voice.origin,
+                    gain: voice.gain,
+                    pitch: voice.pitch,
+                    distance: listener_distance(listener.as_ref(), location),
+                    gains: [left, right],
+                    submix: def.submix,
+                }));
+            }
             let rates = voice.rates(def, rate);
             for frame in buses[def.submix.0 as usize].iter_mut() {
                 if voice.finished() {
@@ -352,6 +420,12 @@ impl Mixer {
                 frame[1] += mul_fx(value, right);
                 voice.played += 1;
             }
+        }
+        for voice in self.voices.iter().filter(|voice| voice.finished()) {
+            self.events.push(VoiceEvent::End {
+                id: voice.id,
+                stopped: voice.stopping,
+            });
         }
         self.voices.retain(|voice| !voice.finished());
         for (child, parent, gain) in self.graph.children_first() {
@@ -379,17 +453,30 @@ impl Mixer {
             })
             .collect();
         let summary = summarize(&frames, clipped, voices, dropped);
-        Block { frames, summary }
+        Block {
+            frames,
+            summary,
+            events: std::mem::take(&mut self.events),
+        }
     }
 
     fn start(&mut self, sound: SoundId, origin: Origin, params: VoiceParams) -> u32 {
-        let Some(def) = self.bank.get(sound) else {
-            return 1;
+        let def = match self.bank.get(sound) {
+            Some(def) if self.voices.len() < MAX_VOICES => def,
+            _ => {
+                self.events.push(VoiceEvent::Dropped { sound, origin });
+                return 1;
+            }
         };
-        if self.voices.len() >= MAX_VOICES {
-            return 1;
-        }
-        let voice = Voice::new(def, sound, origin, params, self.format.sample_rate());
+        let voice = Voice::new(
+            self.next_id,
+            def,
+            sound,
+            origin,
+            params,
+            self.format.sample_rate(),
+        );
+        self.next_id += 1;
         self.voices.push(voice);
         0
     }
@@ -763,6 +850,76 @@ mod tests {
         assert!(third.frames[..400].iter().any(|f| f[0] != 0));
         assert!(third.frames[400..].iter().all(|f| f[0] == 0));
         assert_eq!(mixer.render(&world).summary.voices, 0);
+    }
+
+    #[test]
+    fn the_block_reports_starts_ends_and_drops() {
+        let mut sound = def(Source::Sine { hz: fx(440) }, 1000);
+        sound.attenuation = Attenuation::Linear {
+            inner_radius: fx(100),
+            falloff_distance: fx(400),
+        };
+        let mut mixer = mixer(vec![sound], MixGraph::default());
+        let mut world = world();
+        let listener = world.spawn();
+        world
+            .insert(
+                listener,
+                Listener {
+                    location: at(0, 0, 0),
+                    yaw: Fx::ZERO,
+                },
+            )
+            .unwrap();
+        let entity = world.spawn();
+        world
+            .insert(
+                entity,
+                PlaySound {
+                    location: at(0, 300, 0),
+                    sound: SoundId(0),
+                    gain: Fx::from_ratio(1, 2),
+                    pitch: Fx::ONE,
+                    seed: 1,
+                    take: 0,
+                },
+            )
+            .unwrap();
+        let first = mixer.render(&world);
+        let [VoiceEvent::Start(start)] = first.events[..] else {
+            panic!("expected one start, got {:?}", first.events);
+        };
+        assert_eq!(start.id, 0);
+        assert_eq!(start.sound, SoundId(0));
+        assert_eq!(start.origin, Origin::At(at(0, 300, 0)));
+        assert_eq!(start.gain, Fx::from_ratio(1, 2));
+        assert_eq!(start.distance, Some(300));
+        assert_eq!(start.gains[0], 0);
+        assert!((start.gains[1] - UNITY / 4).abs() <= 2);
+        assert_eq!(start.submix, SubmixId::MASTER);
+        let second = mixer.render(&world);
+        assert_eq!(
+            second.events,
+            vec![VoiceEvent::End {
+                id: 0,
+                stopped: false
+            }]
+        );
+        let mut full = mixer_with_one_square();
+        let mut world = self::world();
+        for _ in 0..MAX_VOICES + 1 {
+            play(&mut world, 0, Fx::from_ratio(1, 1000));
+        }
+        let events = full.render(&world).events;
+        let drops = events
+            .iter()
+            .filter(|event| matches!(event, VoiceEvent::Dropped { .. }))
+            .count();
+        let starts = events
+            .iter()
+            .filter(|event| matches!(event, VoiceEvent::Start(_)))
+            .count();
+        assert_eq!((starts, drops), (MAX_VOICES, 1));
     }
 
     #[test]

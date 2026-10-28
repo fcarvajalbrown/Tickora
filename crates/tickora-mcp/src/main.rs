@@ -147,7 +147,7 @@ fn write_wav(host: &ArenaHost, path: &str) -> Result<(), String> {
     }
     let file = File::create(path).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     let mut out = BufWriter::new(file);
-    host.write_wav(0, host.tick(), &mut out)?;
+    tickora_mcp::host::write_wav(host, 0, host.tick(), &mut out)?;
     out.flush()
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }

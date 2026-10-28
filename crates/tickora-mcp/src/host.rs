@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use serde_json::Value;
-use tickora_audio::Capture;
+use tickora_audio::{Block, Capture, Mixer, wav};
 use tickora_core::ecs::World;
 use tickora_render::{Scene, Scene3, ViewMode};
 
@@ -32,5 +32,26 @@ pub trait Host {
 
     fn audio(&self) -> &Capture;
 
-    fn write_wav(&self, from: u64, to: u64, out: &mut dyn Write) -> Result<(), String>;
+    fn replay_audio(
+        &self,
+        from: u64,
+        to: u64,
+        sink: &mut dyn FnMut(u64, &Block, &Mixer) -> Result<(), String>,
+    ) -> Result<(), String>;
+}
+
+pub fn write_wav<H: Host + ?Sized>(
+    host: &H,
+    from: u64,
+    to: u64,
+    out: &mut dyn Write,
+) -> Result<(), String> {
+    let format = host.audio().format();
+    host.audio().range(from, to)?;
+    let frames = (to - from) * u64::from(format.samples_per_tick());
+    out.write_all(&wav::header(format.sample_rate(), frames)?)
+        .map_err(|e| e.to_string())?;
+    host.replay_audio(from, to, &mut |_, block, _| {
+        wav::write_frames(out, &block.frames).map_err(|e| e.to_string())
+    })
 }

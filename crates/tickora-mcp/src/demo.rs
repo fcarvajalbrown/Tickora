@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{Value, json};
 use tickora_audio::component::{self as audio, audio_rng};
 use tickora_audio::{
-    Attenuation, AudioFormat, Capture, Envelope, Listener, MixGraph, Mixer, Pick, SoundBank,
+    Attenuation, AudioFormat, Block, Capture, Envelope, Listener, MixGraph, Mixer, Pick, SoundBank,
     SoundDef, Source, SubmixDef, TakeHistory, Variation, wav,
 };
 use tickora_core::ecs::{Component, Entity, FieldValue, Fields, World};
@@ -547,19 +546,20 @@ impl Host for ArenaHost {
         &self.capture
     }
 
-    fn write_wav(&self, from: u64, to: u64, out: &mut dyn Write) -> Result<(), String> {
+    fn replay_audio(
+        &self,
+        from: u64,
+        to: u64,
+        sink: &mut dyn FnMut(u64, &Block, &Mixer) -> Result<(), String>,
+    ) -> Result<(), String> {
         self.capture.range(from, to)?;
-        let format = self.capture.format();
-        let frames = (to - from) * u64::from(format.samples_per_tick());
-        let header = wav::header(format.sample_rate(), frames)?;
-        out.write_all(&header).map_err(|e| e.to_string())?;
         let mut runner = Runner::new(Arena::new(self.seed), self.seed);
         let mut mixer = arena_mixer();
         for tick in 0..to {
             runner.step(&self.log);
             let block = mixer.render(runner.sim().world());
             if tick >= from {
-                wav::write_frames(out, &block.frames).map_err(|e| e.to_string())?;
+                sink(tick, &block, &mixer)?;
             }
         }
         Ok(())
@@ -683,6 +683,34 @@ mod tests {
     }
 
     #[test]
+    fn the_replay_names_each_sound_at_the_tick_its_input_set() {
+        let mut host = ArenaHost::new(7);
+        host.step(&[json!({"type": "spawn"})]).unwrap();
+        host.step(&[json!({"type": "damage", "amount": 1})])
+            .unwrap();
+        host.step(&[]).unwrap();
+        let mut starts = Vec::new();
+        host.replay_audio(0, 3, &mut |tick, block, mixer| {
+            for event in &block.events {
+                if let tickora_audio::VoiceEvent::Start(start) = event {
+                    let name = mixer.bank().name(start.sound).unwrap().to_string();
+                    let submix = mixer.graph().name(start.submix).unwrap().to_string();
+                    starts.push((tick, name, submix));
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            starts,
+            vec![
+                (0, SPAWN_SOUND.to_string(), "sfx".to_string()),
+                (1, HIT_SOUND.to_string(), "sfx".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn a_wav_replays_the_input_log_to_the_same_audio() {
         let mut host = ArenaHost::new(7);
         host.step(&[json!({"type": "spawn"})]).unwrap();
@@ -690,7 +718,7 @@ mod tests {
             .unwrap();
         host.step(&[]).unwrap();
         let mut bytes = Vec::new();
-        host.write_wav(1, 3, &mut bytes).unwrap();
+        crate::host::write_wav(&host, 1, 3, &mut bytes).unwrap();
         assert_eq!(bytes.len(), wav::HEADER_BYTES + 2 * 800 * 6);
         let frames: Vec<[i32; 2]> = bytes[wav::HEADER_BYTES..]
             .chunks(6)
@@ -708,7 +736,7 @@ mod tests {
             hasher.write_u64(block_hasher.finish());
         }
         assert_eq!(hasher.finish(), host.audio().hash(1, 3).unwrap());
-        assert!(host.write_wav(0, 4, &mut Vec::new()).is_err());
+        assert!(crate::host::write_wav(&host, 0, 4, &mut Vec::new()).is_err());
     }
 
     #[test]

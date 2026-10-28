@@ -13,5 +13,5 @@ pub use capture::{BlockSummary, Capture, Meters};
 pub use component::{Listener, PlaySound, SoundEmitter};
 pub use format::AudioFormat;
 pub use graph::{MixGraph, SubmixDef, SubmixId};
-pub use mixer::{Block, Mixer};
+pub use mixer::{Block, Mixer, Origin, VoiceEvent, VoiceStart};
 pub use take::TakeHistory;
