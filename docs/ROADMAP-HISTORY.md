@@ -2,6 +2,18 @@
 
 Finished phases, moved from `ROADMAP.md`, newest first.
 
+## Phase 6: grey-box 3D renderer, 0.6.0
+
+Status: **Done** (0.6.0, CI green on WARP and lavapipe, run 40619161517). ADRs 0002 and 0003; design in `docs/design/phase-6-renderer.md`; tolerance measurement in `docs/research/tolerance-presets.md`.
+
+1. Done. GLB reader dependency, approved by Felipe: `gltf =1.4.1` (MIT OR Apache-2.0), default features off, only `utils` and `names`.
+2. Done. `perspective` viewport (Unreal `ELevelViewportType`) and an eye-height camera string. Arena default `perspective -2500 0 170 0 0 0 90`, 170 cm from Lyra (Felipe); CI run 40615790132.
+3. Done. Depth buffer and mesh drawing: reversed-Z `Depth32Float`, `Scene3` instances from meshkit GLBs, `unlit` and `wireframe`; 6 render tests pass on RTX 2050 and WARP locally and in CI run 40599315260 (WARP, lavapipe).
+4. Done. Textures from the PSX bake: by material name, nearest and repeat, no mipmaps; a checker through `checker_maps` and `psx_bake` renders its exact texels on RTX 2050 and WARP locally and in CI run 40599885889 (WARP, lavapipe).
+5. Done. Point lights with distance falloff (lamp, generator): `lit` view mode, up to 16 lights, Karis 2013 equation (9); 5 lighting render tests pass on RTX 2050 and WARP locally and in CI run 40602838231 (WARP, lavapipe).
+6. Done. Tolerance presets `low`, `medium`, `high`: Unreal's 16, 24, 32 per channel, block 0.10, frame 0.02 (Felipe); `low` passes all four adapters in `docs/research/tolerance-presets.md`; CI run 40618435179.
+7. Done. 3D goldens in scenarios: ten arena perspective shots (lit, unlit, wireframe) with `low`, goldens from CI (WARP, lavapipe); the top shots kept as the debug view; CI run 40619161517.
+
 ## Phase 5: asset pipeline, 0.5.0
 
 Status: **Done** (0.5.0, CI green with 67 tool tests on Windows and Linux). Tools listed in `docs/research/demo-toolkit.md`; ADR 0003.

@@ -4,6 +4,10 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 
 ## [Unreleased]
 
+## [0.6.0]
+
+Grey-box 3D renderer: perspective camera after Unreal's viewport, GLB meshes, depth buffer, PSX textures, lit point lights, the arena in first-person 3D, Unreal's low, medium and high screenshot tolerances, and 3D goldens checked on four adapters.
+
 ### Added
 
 - Tolerance presets `low`, `medium` and `high` from Unreal's `FAutomationScreenshotOptions`: 16, 24 and 32 per channel, block 0.10, frame 0.02, neighbour search on. Chosen by Felipe after measuring the arena's 3D shots on four adapters (`docs/research/tolerance-presets.md`); `low` passes every pair.
@@ -86,7 +90,8 @@ Deterministic simulation core with replay.
 - `Fx` Q32.32 fixed point (ADR 0001) and a sparse-set ECS with field introspection.
 - CI on Windows and Linux in debug and release.
 
-[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.2.0...v0.3.0

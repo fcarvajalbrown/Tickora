@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/tickora-core", "crates/tickora-mcp", "crates/tickora-render", "tools/tolerance_table"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 publish = false
 rust-version = "1.87"
