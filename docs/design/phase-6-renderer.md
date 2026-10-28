@@ -1,6 +1,6 @@
 # Phase 6 design: grey-box 3D renderer
 
-Status: approved by Felipe. Eye height still open.
+Status: approved by Felipe, eye height included.
 
 ADRs 0002 and 0003 set the target: a first-person 3D view with a depth buffer, meshes, textures and point lights, drawn from generator output. Under the CLAUDE.md rule, every piece starts from how Unreal does it. Where Unreal's choice does not transport, the reason is given.
 
@@ -93,7 +93,7 @@ Each step is committed, pushed and checked in CI before the next; ROADMAP items 
 
 ## Open values
 
-- Eye height for the arena fixture's default camera, in centimetres: Felipe's number. The coal-mine miner's eye height is set in phase 8.
+- Eye height for the arena fixture's default camera: 170 cm, chosen by Felipe. Source: Epic's Lyra sample, capsule half-height 90 (`LyraCharacter.cpp:41`) plus `BaseEyeHeight` 80 (`LyraCharacter.cpp:79`), with `BaseEyeHeight` measured from the collision center (`Pawn.h`, UE 5.5). The coal-mine miner's eye height is set in phase 8.
 
 ## Not in this phase
 
