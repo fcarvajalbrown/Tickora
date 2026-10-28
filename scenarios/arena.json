@@ -29,6 +29,16 @@
     { "at": 0, "screenshot": "goldens/arena/top-0-grid" },
     { "at": 600, "screenshot": "goldens/arena/top-600-wide", "camera": "top 0 0 6400" },
     { "at": 600, "screenshot": "goldens/arena/top-600-entity0-wireframe", "camera": "top 2295 982 64", "width": 128, "height": 128, "view_mode": "wireframe" },
-    { "at": 600, "screenshot": "goldens/arena/top-600-entity1", "camera": "top -2898 -2907 64", "width": 128, "height": 128 }
+    { "at": 600, "screenshot": "goldens/arena/top-600-entity1", "camera": "top -2898 -2907 64", "width": 128, "height": 128 },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-default", "viewport": "perspective", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-default-unlit", "viewport": "perspective", "view_mode": "unlit", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-default-wireframe", "viewport": "perspective", "view_mode": "wireframe", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-overview", "camera": "perspective -2500 0 1200 -25 0 0 90", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-overview-unlit", "camera": "perspective -2500 0 1200 -25 0 0 90", "view_mode": "unlit", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-overview-wireframe", "camera": "perspective -2500 0 1200 -25 0 0 90", "view_mode": "wireframe", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0", "camera": "perspective -1250 300 170 -15 26 0 90", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0-unlit", "camera": "perspective -1250 300 170 -15 26 0 90", "view_mode": "unlit", "tolerance": "low" },
+    { "at": 1, "screenshot": "goldens/arena/perspective-1-entity0-wireframe", "camera": "perspective -1250 300 170 -15 26 0 90", "view_mode": "wireframe", "tolerance": "low" },
+    { "at": 600, "screenshot": "goldens/arena/perspective-600-default", "viewport": "perspective", "tolerance": "low" }
   ]
 }

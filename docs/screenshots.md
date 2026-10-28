@@ -38,7 +38,7 @@ One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes U
 - `show_grid` (top only, default true) draws a line every 32 world units and brighter axes through 0. The grid is left out when its lines would be under 2 pixels apart.
 - `width` and `height` run from 16 to 2048 pixels. Default 256.
 
-In the top view shapes snap to whole pixels and there is no anti-aliasing, so the same state and camera give the same pixels on every adapter tested so far: an NVIDIA GeForce RTX 2050 and WARP on Windows, and Mesa lavapipe on Linux all produce byte-identical top frames. Perspective frames have sloped edges, texture lookups and per-pixel lighting, so adapters may differ there; that is measured before the 3D goldens are recorded.
+In the top view shapes snap to whole pixels and there is no anti-aliasing, so the same state and camera give the same pixels on every adapter tested so far: an NVIDIA GeForce RTX 2050 and WARP on Windows, and Mesa lavapipe on Linux all produce byte-identical top frames. Perspective frames have sloped edges, texture lookups and per-pixel lighting, so adapters differ there by one unit of shading and a few edge pixels. The arena's 3D goldens are recorded on the CI software adapters and checked with the `low` preset; the top shots stay as the debug view.
 
 ## MCP tool
 
