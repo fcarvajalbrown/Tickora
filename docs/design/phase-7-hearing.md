@@ -1,6 +1,6 @@
 # Phase 7 design, item 4: agent hearing
 
-Status: proposed, waiting for Felipe's approval.
+Status: approved by Felipe.
 
 An agent cannot listen to a WAV, so Tickora describes the audio it renders in a form an agent can act on: which sounds played when, what the mix measures, a plain-words reading, and a spectrogram picture. Felipe: "since most MCPs or agents like you have big trouble hearing or can't at all... that is the biggest issue". Under the CLAUDE.md rule each part starts from how Unreal does it. Prior art in `docs/research/agent-hearing.md`.
 

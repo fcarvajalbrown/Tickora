@@ -25,7 +25,7 @@ Status: **In Progress**.
 1. Done. Noise as simulation state: events with position and loudness the monster can hear (`docs/design/phase-7-noise.md`, CI run 40697705009).
 2. Done. Headless audio output a scenario can check; Keel for mixing and mastering (`docs/design/phase-7-audio-output.md`, CI run 40717357273).
 3. Done. CC0 and generated sounds through the phase 5 tools (`docs/design/phase-7-sounds.md`, CI run 40731326989).
-4. Not Started. Agent hearing: Corpofobia's `audio_listen` describes rendered audio in text through `tickora_listen` and the scenario CLI; design first.
+4. In Progress. Agent hearing: Corpofobia's `audio_listen` describes rendered audio in text through `tickora_listen` and the scenario CLI (`docs/design/phase-7-hearing.md`).
 
 ## Phase 8: Bunker-level visuals, 0.8.0
 
