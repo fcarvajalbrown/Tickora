@@ -65,7 +65,7 @@ pub fn definitions<H: Host>(host: &H) -> Value {
         ),
         tool(
             "tickora_run_scenario",
-            "Run a scenario on a fresh simulation, leaving the live one untouched, and report every assertion. Give exactly one of path (a JSON scenario file, relative to the server's working directory) or scenario (the same object inline). A scenario has seed, optional inputs as [{at, inputs}] applied in the step from tick at to at + 1, run_to, and expect: a list of {at} plus one check, which is state_hash or replay_hash (decimal string), entities (count), component with count, query (component names) with count, or entity {index, generation} with field \"component.field\" and value. Counts and int values take {eq} or {min, max}; bool and text take {eq}; fx takes {raw} (Q32.32 decimal string), {raw_min, raw_max} or {approx, tol}. A failed assertion returns passed false, not a tool error.",
+            "Run a scenario on a fresh simulation, leaving the live one untouched, and report every assertion. Give exactly one of path (a JSON scenario file, relative to the server's working directory) or scenario (the same object inline). A scenario has seed, optional inputs as [{at, inputs}] applied in the step from tick at to at + 1, run_to, and expect: a list of {at} plus one check, which is state_hash or replay_hash (decimal string), entities (count), component with count, query (component names) with count, or entity {index, generation} with field \"component.field\" and value, or audio [from, to] (ticks, to <= at) with one of hash (decimal string), channel \"left\" or \"right\" plus peak_dbfs or rms_dbfs as {min, max}, voices (count) or clipped (count). Counts and int values take {eq} or {min, max}; bool and text take {eq}; fx takes {raw} (Q32.32 decimal string), {raw_min, raw_max} or {approx, tol}. A failed assertion returns passed false, not a tool error.",
             json!({
                 "path": { "type": "string" },
                 "scenario": { "type": "object" },
@@ -86,6 +86,16 @@ pub fn definitions<H: Host>(host: &H) -> Value {
                 "height": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "default": DEFAULT_SIZE },
                 "view_mode": { "type": "string", "enum": ["lit", "unlit", "wireframe"] },
                 "show_grid": { "type": "boolean", "description": "Top only, default true." },
+                "path": { "type": "string" },
+            }),
+            &[],
+        ),
+        tool(
+            "tickora_listen",
+            "Measure the audio the live simulation has rendered, without stepping it. The host renders one block per tick offline: stereo, 24-bit, 48000 Hz, 800 samples per tick; the block for tick t is the sound of the step from t to t + 1. from and to are a half-open tick range, default 0 to the current tick. Returns the audio hash of the range as a decimal string, per-channel peak and RMS in dBFS (null for silence), clipped samples, the most voices active in any tick of the range, voices active in the last block and dropped voice starts. With path, the range is also written as a WAV, relative to the server's working directory, by replaying the recorded inputs.",
+            json!({
+                "from": { "type": "integer", "minimum": 0, "default": 0 },
+                "to": { "type": "integer", "minimum": 0, "description": "Default: the current tick." },
                 "path": { "type": "string" },
             }),
             &[],
@@ -114,6 +124,7 @@ pub fn call<H: Host>(host: &mut H, params: &Map<String, Value>) -> Result<Value,
         "tickora_reset" => reset(host, args).map(plain),
         "tickora_run_scenario" => run_scenario(host, args).map(plain),
         "tickora_screenshot" => screenshot(host, args),
+        "tickora_listen" => listen(host, args).map(plain),
         _ => return Err(RpcError::invalid_params(format!("unknown tool {name}"))),
     };
     Ok(match outcome {
@@ -300,6 +311,54 @@ fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), 
     }
     let image = json!({ "type": "image", "data": base64::encode(&png), "mimeType": "image/png" });
     Ok((structured, Some(image)))
+}
+
+fn listen<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
+    only(args, &["from", "to", "path"])?;
+    let from: u64 = typed(args, "from")?.unwrap_or(0);
+    let to: u64 = typed(args, "to")?.unwrap_or(host.tick());
+    let path: Option<String> = typed(args, "path")?;
+    let capture = host.audio();
+    let meters = capture.meters(from, to)?;
+    if let Some(path) = &path {
+        let path = Path::new(path);
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        let file = std::fs::File::create(path)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        let mut out = std::io::BufWriter::new(file);
+        host.write_wav(from, to, &mut out)?;
+        std::io::Write::flush(&mut out)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    let format = capture.format();
+    let channel =
+        |c: usize| json!({ "peak_dbfs": meters.peak_dbfs[c], "rms_dbfs": meters.rms_dbfs[c] });
+    let mut structured = json!({
+        "tick": host.tick(),
+        "format": {
+            "sample_rate": format.sample_rate(),
+            "tick_rate": format.tick_rate(),
+            "samples_per_tick": format.samples_per_tick(),
+            "channels": 2,
+            "bits_per_sample": 24,
+        },
+        "from": from,
+        "to": to,
+        "hash": meters.hash.to_string(),
+        "left": channel(0),
+        "right": channel(1),
+        "clipped": meters.clipped,
+        "voices_max": meters.voices,
+        "voices_now": capture.last().map_or(0, |block| block.voices),
+        "dropped": meters.dropped,
+    });
+    if let Some(path) = path {
+        structured["path"] = json!(path);
+    }
+    Ok(structured)
 }
 
 fn entity_json(entity: Entity) -> Value {

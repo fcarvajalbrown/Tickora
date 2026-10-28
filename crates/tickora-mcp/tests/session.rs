@@ -229,7 +229,7 @@ fn reset_returns_to_a_fresh_run() {
 }
 
 #[test]
-fn tools_list_exposes_the_eight_tools_with_object_schemas() {
+fn tools_list_exposes_the_nine_tools_with_object_schemas() {
     let mut script = Script::new(Era::Modern);
     script.request("tools/list", json!({}));
     let replies = script.run(0);
@@ -248,6 +248,7 @@ fn tools_list_exposes_the_eight_tools_with_object_schemas() {
             "tickora_reset",
             "tickora_run_scenario",
             "tickora_screenshot",
+            "tickora_listen",
         ]
     );
     for tool in tools {
@@ -357,6 +358,60 @@ fn a_scenario_runs_on_a_fresh_sim_and_leaves_the_live_one_alone() {
     }
     let missing = replies[7]["result"]["content"][0]["text"].as_str().unwrap();
     assert!(missing.contains("cannot read file"), "{missing}");
+}
+
+#[test]
+fn listen_measures_rendered_audio_and_writes_a_wav_without_stepping() {
+    let path = std::env::temp_dir().join(format!("tickora-listen-{}.wav", std::process::id()));
+    let mut script = Script::new(Era::Modern);
+    script.call("tickora_listen", json!({}));
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 3, "inputs": [{ "type": "spawn" }] }),
+    );
+    script.call("tickora_listen", json!({}));
+    script.call(
+        "tickora_listen",
+        json!({ "from": 1, "to": 3, "path": path.to_str().unwrap() }),
+    );
+    script.call("tickora_state_hash", json!({}));
+    script.call("tickora_listen", json!({ "to": 4 }));
+    script.call("tickora_listen", json!({ "from": 2, "to": 1 }));
+    script.call("tickora_listen", json!({ "volume": 1 }));
+    let replies = script.run(4);
+
+    let silent = structured(&replies[1]);
+    assert_eq!(silent["to"], 0);
+    assert_eq!(silent["left"]["peak_dbfs"], Value::Null);
+    assert_eq!(silent["voices_now"], 0);
+    assert_eq!(silent["format"]["samples_per_tick"], 800);
+
+    let heard = structured(&replies[3]);
+    assert_eq!(
+        (heard["from"].as_u64(), heard["to"].as_u64()),
+        (Some(0), Some(3))
+    );
+    assert!(heard["left"]["peak_dbfs"].as_f64().unwrap() < 0.0);
+    assert!(heard["right"]["rms_dbfs"].as_f64().is_some());
+    assert_eq!(heard["voices_max"], 1);
+    assert_eq!(heard["voices_now"], 1);
+    assert_eq!(heard["clipped"], 0);
+    assert!(heard["hash"].as_str().unwrap().parse::<u64>().is_ok());
+
+    let written = structured(&replies[4]);
+    assert_eq!(written["path"], path.to_str().unwrap());
+    assert_ne!(written["hash"], heard["hash"]);
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(bytes.len(), 44 + 2 * 800 * 6);
+
+    assert_eq!(
+        structured(&replies[5])["state_hash"],
+        structured(&replies[2])["state_hash"]
+    );
+    assert!(tool_error(&replies[6]).contains("past the 3 rendered ticks"));
+    assert!(tool_error(&replies[7]).contains("backwards"));
+    assert!(tool_error(&replies[8]).contains("unexpected argument"));
 }
 
 fn tool_error(reply: &Value) -> String {
