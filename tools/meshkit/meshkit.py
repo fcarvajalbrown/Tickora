@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+CONTENT_GAMMA = 2.2
+
 PALETTE = {
     "bark": (88, 66, 52),
     "foliage": (44, 88, 52),
@@ -279,7 +281,7 @@ def write_glb(mesh, path):
             "TEXCOORD_0": push(uv, 34962, 5126, "VEC2"),
         }
         indices_accessor = push(indices, 34963, 5125, "SCALAR")
-        colour = [c / 255 for c in PALETTE.get(material, (180, 180, 180))] + [1.0]
+        colour = [(c / 255) ** CONTENT_GAMMA for c in PALETTE.get(material, (180, 180, 180))] + [1.0]
         materials.append({"name": material, "pbrMetallicRoughness": {"baseColorFactor": colour, "metallicFactor": 0.0, "roughnessFactor": 0.9}})
         primitives.append({"attributes": attributes, "indices": indices_accessor, "material": index})
 

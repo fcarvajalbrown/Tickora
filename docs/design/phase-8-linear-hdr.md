@@ -55,6 +55,7 @@ What the curve does to the numbers, at exposure 1.0, white point 11.2 and gamma 
 - Arena: new constants `EXPOSURE` (1.0) and `WHITE_POINT` (11.2) in `demo.rs`, and `hp_color_linear` decodes its bytes with `pow(c, 2.2)` so a cube reads as the same colour as its top-view quad. Light values stay as they are (ambient 0.15, two lights at intensity 30, radius 20 m), by Felipe's choice.
 
 Simulation state, replay, ECS, noise and audio hashes don't change: rendering reads the sim and never writes it.
+- meshkit (found while building step 2, Felipe's choice): `tools/meshkit/meshkit.py` wrote its palette bytes into `baseColorFactor` as `byte / 255`. glTF reads that factor as linear, so every meshkit mesh would have rendered washed out (the fixture stone 120, 118, 112 at about 181). meshkit now writes `(byte / 255) ^ 2.2` with the same content gamma as the shader, and the render fixtures in `assets/gen/render_fixtures/meshes/` are rebuilt with `interior_kit`. Only the material factors change; geometry and buffers are byte-identical.
 
 ## Re-recording the goldens, once
 
