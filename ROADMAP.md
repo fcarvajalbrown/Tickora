@@ -19,9 +19,9 @@ Status: **Done** (0.1.0 to 0.7.0). Full text in the history.
 
 ## Phase 8: Bunker-level visuals, 0.8.0
 
-Status: **Not Started**. Builds on phase 6; visuals like Amnesia: The Bunker (PRD section 4).
+Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PRD section 4).
 
-1. Not Started. Study Amnesia: The Bunker's look; findings in `docs/research/` before the rest of the list is fixed.
+1. Done. Study Amnesia: The Bunker's look; findings in `docs/research/bunker-look.md` before the rest of the list is fixed.
 2. Not Started. Shadows from the point lights and specular highlights.
 3. Not Started. Normal maps, mipmaps and filtered texture sampling.
 
