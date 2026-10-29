@@ -16,6 +16,7 @@ pub use mesh::{Mesh, Primitive};
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
 pub use scene::{Color, Fill, Grid, Layout, PixelRect, Quad, Scene, ViewMode};
 pub use scene3::{MeshInstance, PointLight, Scene3};
+pub use tone::Display;
 
 pub const MIN_SIZE: u32 = 16;
 pub const MAX_SIZE: u32 = 2048;

@@ -83,6 +83,8 @@ impl MeshInstance {
 pub struct Scene3 {
     pub background: Color,
     pub ambient: [f32; 3],
+    pub exposure: f32,
+    pub white_point: f32,
     pub instances: Vec<MeshInstance>,
     pub lights: Vec<PointLight>,
     pub textures: BTreeMap<String, Arc<Image>>,
@@ -263,6 +265,8 @@ mod tests {
         Scene3 {
             background: [0, 0, 0, 255],
             ambient: [0.0; 3],
+            exposure: 1.0,
+            white_point: 11.2,
             instances,
             lights: Vec::new(),
             textures: BTreeMap::new(),

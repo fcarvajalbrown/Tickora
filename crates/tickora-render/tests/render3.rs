@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use tickora_render::{
-    AdapterChoice, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Renderer, Rotator,
-    Scene3, ViewMode,
+    AdapterChoice, Display, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Renderer,
+    Rotator, Scene3, ViewMode, tone,
 };
 
 const BACKGROUND: [u8; 4] = [24, 24, 28, 255];
@@ -45,6 +45,8 @@ fn near_and_far(near_first: bool) -> Scene3 {
     Scene3 {
         background: BACKGROUND,
         ambient: [0.0; 3],
+        exposure: 1.0,
+        white_point: 11.2,
         instances,
         lights: Vec::new(),
         textures: BTreeMap::new(),
@@ -60,7 +62,14 @@ fn pixel_at(image: &Image, ndc_x: f64, ndc_y: f64) -> [u8; 4] {
 
 fn render(scene: &Scene3, view_mode: ViewMode) -> (Image, usize) {
     renderer()
-        .render3(scene, &scene.camera, view_mode, WIDTH, HEIGHT)
+        .render3(
+            scene,
+            &scene.camera,
+            view_mode,
+            &Display::default(),
+            WIDTH,
+            HEIGHT,
+        )
         .unwrap()
 }
 
@@ -113,7 +122,14 @@ fn rejects_sizes_out_of_range() {
     let renderer = renderer();
     assert!(
         renderer
-            .render3(&scene, &scene.camera, ViewMode::Unlit, 15, 64)
+            .render3(
+                &scene,
+                &scene.camera,
+                ViewMode::Unlit,
+                &Display::default(),
+                15,
+                64
+            )
             .is_err()
     );
 }
@@ -123,6 +139,8 @@ fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
     let scene = |location: [f64; 3]| Scene3 {
         background: BACKGROUND,
         ambient: [0.0; 3],
+        exposure: 1.0,
+        white_point: 11.2,
         instances: vec![MeshInstance::new(cube(), location)],
         lights: Vec::new(),
         textures: BTreeMap::new(),
@@ -146,6 +164,8 @@ fn psx_bake_texture_shows_its_texels_unlit() {
     let scene = Scene3 {
         background: BACKGROUND,
         ambient: [0.0; 3],
+        exposure: 1.0,
+        white_point: 11.2,
         instances: vec![cube],
         lights: Vec::new(),
         textures: BTreeMap::from([("stone".to_string(), Arc::new(checker))]),
@@ -164,6 +184,8 @@ fn lit_cube(lights: Vec<PointLight>) -> Scene3 {
     Scene3 {
         background: BACKGROUND,
         ambient: [0.25, 0.25, 0.25],
+        exposure: 1.0,
+        white_point: 11.2,
         instances: vec![cube],
         lights,
         textures: BTreeMap::new(),
@@ -184,14 +206,113 @@ fn luma(pixel: [u8; 4]) -> u32 {
     u32::from(pixel[0]) + u32::from(pixel[1]) + u32::from(pixel[2])
 }
 
+fn within_one(pixel: [u8; 4], expected: u8) -> bool {
+    pixel[..3]
+        .iter()
+        .all(|&channel| channel.abs_diff(expected) <= 1)
+        && pixel[3] == 255
+}
+
+fn tone_mapped(linear: f64, exposure: f64) -> u8 {
+    tone::encode_byte(
+        tone::tone_map(linear, exposure, tone::DEFAULT_WHITE_POINT),
+        tone::DEFAULT_GAMMA,
+    )
+}
+
 #[test]
-fn lit_ambient_alone_scales_the_colour() {
+fn lit_ambient_alone_follows_the_tone_curve() {
     let (image, _) = render(&lit_cube(Vec::new()), ViewMode::Lit);
     let centre = pixel_at(&image, 0.0, 0.05);
-    for channel in &centre[..3] {
-        assert!((63..=64).contains(channel), "{centre:?}");
+    assert_eq!(tone_mapped(0.25, 1.0), 86);
+    assert!(within_one(centre, 86), "{centre:?}");
+}
+
+#[test]
+fn exposure_brightens_a_lit_face() {
+    let mut scene = lit_cube(Vec::new());
+    scene.exposure = 2.0;
+    let (image, _) = render(&scene, ViewMode::Lit);
+    let centre = pixel_at(&image, 0.0, 0.05);
+    assert!(within_one(centre, tone_mapped(0.25, 2.0)), "{centre:?}");
+}
+
+#[test]
+fn light_past_the_white_point_saturates() {
+    let mut scene = lit_cube(Vec::new());
+    scene.ambient = [40.0; 3];
+    let (image, _) = render(&scene, ViewMode::Lit);
+    assert_eq!(pixel_at(&image, 0.0, 0.05), [255, 255, 255, 255]);
+}
+
+#[test]
+fn gamma_changes_unlit_pixels_as_predicted() {
+    let display = Display { gamma: 1.8 };
+    let scene = near_and_far(true);
+    let (image, _) = renderer()
+        .render3(
+            &scene,
+            &scene.camera,
+            ViewMode::Unlit,
+            &display,
+            WIDTH,
+            HEIGHT,
+        )
+        .unwrap();
+    let background = pixel_at(&image, 0.8, 0.05);
+    let expected = |byte: u8| tone::encode_byte(tone::decode_byte(byte), 1.8);
+    for (channel, byte) in background[..3].iter().zip(&BACKGROUND[..3]) {
+        assert!(channel.abs_diff(expected(*byte)) <= 1, "{background:?}");
     }
-    assert_eq!(centre[3], 255);
+    assert_ne!(background, BACKGROUND);
+}
+
+#[test]
+fn tone_settings_must_be_finite_and_positive() {
+    let renderer = renderer();
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut scene = lit_cube(Vec::new());
+        scene.exposure = bad;
+        assert!(
+            renderer
+                .render3(
+                    &scene,
+                    &scene.camera,
+                    ViewMode::Lit,
+                    &Display::default(),
+                    WIDTH,
+                    HEIGHT
+                )
+                .is_err()
+        );
+        let mut scene = lit_cube(Vec::new());
+        scene.white_point = bad;
+        assert!(
+            renderer
+                .render3(
+                    &scene,
+                    &scene.camera,
+                    ViewMode::Lit,
+                    &Display::default(),
+                    WIDTH,
+                    HEIGHT
+                )
+                .is_err()
+        );
+        let scene = lit_cube(Vec::new());
+        assert!(
+            renderer
+                .render3(
+                    &scene,
+                    &scene.camera,
+                    ViewMode::Lit,
+                    &Display { gamma: bad },
+                    WIDTH,
+                    HEIGHT
+                )
+                .is_err()
+        );
+    }
 }
 
 #[test]
@@ -222,7 +343,14 @@ fn too_many_lamps_is_an_error() {
     let scene = lit_cube(vec![lamp(200.0); 17]);
     assert!(
         renderer()
-            .render3(&scene, &scene.camera, ViewMode::Lit, WIDTH, HEIGHT)
+            .render3(
+                &scene,
+                &scene.camera,
+                ViewMode::Lit,
+                &Display::default(),
+                WIDTH,
+                HEIGHT
+            )
             .is_err()
     );
 }

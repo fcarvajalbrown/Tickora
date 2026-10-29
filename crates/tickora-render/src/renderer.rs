@@ -7,12 +7,15 @@ use crate::camera::{OrthoCamera, PerspectiveCamera};
 use crate::image::Image;
 use crate::scene::{Layout, PixelRect, Scene, ViewMode};
 use crate::scene3::{self, Batch, Scene3};
+use crate::tone::{self, Display};
 use crate::{MAX_SIZE, MIN_SIZE};
 
 pub const ADAPTER_ENV: &str = "TICKORA_ADAPTER";
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const LIGHT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const TONE_UNIFORM_SIZE: u64 = 16;
 const VERTEX_SIZE: u64 = 12;
 const FRAME_UNIFORM_SIZE: u64 = 64 + 32 + 32 * scene3::MAX_LIGHTS as u64;
 
@@ -34,6 +37,8 @@ fn fs(input: Out) -> @location(0) vec4<f32> {
 ";
 
 const MESH_SHADER: &str = "
+const CONTENT_GAMMA: f32 = 2.2;
+
 struct Light {
     position_radius: vec4<f32>,
     color_intensity: vec4<f32>,
@@ -74,15 +79,19 @@ fn vs(
     return out;
 }
 
+fn decoded(uv: vec2<f32>) -> vec3<f32> {
+    let texel = textureSample(albedo, albedo_sampler, uv);
+    return pow(texel.rgb, vec3<f32>(CONTENT_GAMMA));
+}
+
 @fragment
 fn fs_unlit(input: Out) -> @location(0) vec4<f32> {
-    let texel = textureSample(albedo, albedo_sampler, input.uv);
-    return vec4<f32>(input.color.rgb * texel.rgb, 1.0);
+    return vec4<f32>(input.color.rgb * decoded(input.uv), 1.0);
 }
 
 @fragment
 fn fs_lit(input: Out) -> @location(0) vec4<f32> {
-    let texel = textureSample(albedo, albedo_sampler, input.uv);
+    let base = decoded(input.uv);
     let normal = normalize(input.normal);
     var light = frame.ambient.rgb;
     for (var index = 0u; index < frame.counts.x; index = index + 1u) {
@@ -96,9 +105,51 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
         let lambert = max(dot(normal, to_light / max(distance, 0.0001)), 0.0);
         light = light + source.color_intensity.rgb * source.color_intensity.w * lambert * falloff;
     }
-    return vec4<f32>(input.color.rgb * texel.rgb * light, 1.0);
+    return vec4<f32>(input.color.rgb * base * light, 1.0);
 }
 ";
+
+const TONE_SHADER: &str = "
+const A: f32 = 0.15;
+const B: f32 = 0.50;
+const C: f32 = 0.10;
+const D: f32 = 0.20;
+const E: f32 = 0.02;
+const F: f32 = 0.30;
+
+struct Tone {
+    exposure_white_gamma_curve: vec4<f32>,
+}
+
+@group(0) @binding(0) var light_buffer: texture_2d<f32>;
+@group(0) @binding(1) var<uniform> tone: Tone;
+
+@vertex
+fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let x = f32((index & 1u) * 4u) - 1.0;
+    let y = f32((index >> 1u) * 4u) - 1.0;
+    return vec4<f32>(x, y, 0.0, 1.0);
+}
+
+fn hable(x: vec3<f32>) -> vec3<f32> {
+    return (x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F) - E / F;
+}
+
+@fragment
+fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    let settings = tone.exposure_white_gamma_curve;
+    var colour = textureLoad(light_buffer, vec2<i32>(position.xy), 0).rgb;
+    if settings.w > 0.5 {
+        colour = hable(colour * settings.x) / hable(vec3<f32>(settings.y));
+    }
+    return vec4<f32>(pow(saturate(colour), vec3<f32>(1.0 / settings.z)), 1.0);
+}
+";
+
+struct TonePipeline {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+}
 
 struct MeshPipelines {
     lit: wgpu::RenderPipeline,
@@ -159,6 +210,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
     mesh: MeshPipelines,
+    tone: TonePipeline,
     info: AdapterInfo,
     one_frame_at_a_time: Mutex<()>,
 }
@@ -194,11 +246,13 @@ impl Renderer {
         .map_err(|e| format!("adapter {} refused a device: {e}", info.name))?;
         let pipeline = pipeline(&device);
         let mesh = mesh_pipelines(&device);
+        let tone = tone_pipeline(&device);
         Ok(Renderer {
             device,
             queue,
             pipeline,
             mesh,
+            tone,
             info,
             one_frame_at_a_time: Mutex::new(()),
         })
@@ -227,7 +281,7 @@ impl Renderer {
                     usage: wgpu::BufferUsages::VERTEX,
                 })
         });
-        let image = self.frame(scene.background, width, height, false, |pass| {
+        let image = self.frame(scene.background, width, height, |pass| {
             if let Some(buffer) = &vertex_buffer {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_vertex_buffer(0, buffer.slice(..));
@@ -242,10 +296,14 @@ impl Renderer {
         scene: &Scene3,
         camera: &PerspectiveCamera,
         view_mode: ViewMode,
+        display: &Display,
         width: u32,
         height: u32,
     ) -> Result<(Image, usize), String> {
         check_size(width, height)?;
+        tone::check_positive("exposure", f64::from(scene.exposure))?;
+        tone::check_positive("white_point", f64::from(scene.white_point))?;
+        tone::check_positive("gamma", f64::from(display.gamma))?;
         let _frame = self.lock_frame();
         let (batches, pipeline) = match view_mode {
             ViewMode::Lit => (scene.triangles(), &self.mesh.lit),
@@ -291,7 +349,87 @@ impl Renderer {
                 (batch, buffer, self.texture_group(image))
             })
             .collect();
-        let image = self.frame(scene.background, width, height, true, |pass| {
+        let curve = if view_mode == ViewMode::Lit { 1.0 } else { 0.0 };
+        let tone_bytes: Vec<u8> = [scene.exposure, scene.white_point, display.gamma, curve]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        let tone_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tickora tone uniforms"),
+                contents: &tone_bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let light_view = self
+            .target(
+                "tickora light buffer",
+                LIGHT_FORMAT,
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                width,
+                height,
+            )
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let tone_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("tickora tone"),
+            layout: &self.tone.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&light_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: tone_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let depth_view = self
+            .target(
+                "tickora depth",
+                DEPTH_FORMAT,
+                wgpu::TextureUsages::RENDER_ATTACHMENT,
+                width,
+                height,
+            )
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let frame = self.target(
+            "tickora frame",
+            FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            width,
+            height,
+        );
+        let frame_view = frame.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("tickora frame"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("tickora geometry"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &light_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(linear_clear_color(scene.background)),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &frame_group, &[]);
             for (batch, buffer, texture) in &draws {
@@ -299,7 +437,29 @@ impl Renderer {
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 pass.draw(0..batch.vertex_count(), 0..1);
             }
-        })?;
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("tickora tone"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.tone.pipeline);
+            pass.set_bind_group(0, &tone_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        let image = self.read_back(encoder, &frame, width, height)?;
         Ok((image, scene.off_screen(camera, width, height)))
     }
 
@@ -346,35 +506,16 @@ impl Renderer {
         })
     }
 
-    fn frame(
+    fn target(
         &self,
-        background: [u8; 4],
+        label: &str,
+        format: wgpu::TextureFormat,
+        usage: wgpu::TextureUsages,
         width: u32,
         height: u32,
-        depth: bool,
-        record: impl FnOnce(&mut wgpu::RenderPass<'_>),
-    ) -> Result<Image, String> {
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        let depth_view = depth.then(|| {
-            self.device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some("tickora depth"),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: DEPTH_FORMAT,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                })
-                .create_view(&wgpu::TextureViewDescriptor::default())
-        });
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("tickora frame"),
+    ) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -383,20 +524,27 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            format,
+            usage,
             view_formats: &[],
-        });
+        })
+    }
+
+    fn frame(
+        &self,
+        background: [u8; 4],
+        width: u32,
+        height: u32,
+        record: impl FnOnce(&mut wgpu::RenderPass<'_>),
+    ) -> Result<Image, String> {
+        let texture = self.target(
+            "tickora frame",
+            FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            width,
+            height,
+        );
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let row_bytes = width * 4;
-        let padded_row = row_bytes.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
-            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("tickora readback"),
-            size: u64::from(padded_row) * u64::from(height),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -414,25 +562,35 @@ impl Renderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: depth_view.as_ref().map(|view| {
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(0.0),
-                            store: wgpu::StoreOp::Discard,
-                        }),
-                        stencil_ops: None,
-                    }
-                }),
+                depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             record(&mut pass);
         }
+        self.read_back(encoder, &texture, width, height)
+    }
+
+    fn read_back(
+        &self,
+        mut encoder: wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<Image, String> {
+        let row_bytes = width * 4;
+        let padded_row = row_bytes.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tickora readback"),
+            size: u64::from(padded_row) * u64::from(height),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &texture,
+                texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -527,6 +685,15 @@ fn clear_color(color: [u8; 4]) -> wgpu::Color {
         g: channel(color[1]),
         b: channel(color[2]),
         a: channel(color[3]),
+    }
+}
+
+fn linear_clear_color(color: [u8; 4]) -> wgpu::Color {
+    wgpu::Color {
+        r: tone::decode_byte(color[0]),
+        g: tone::decode_byte(color[1]),
+        b: tone::decode_byte(color[2]),
+        a: 1.0,
     }
 }
 
@@ -681,7 +848,7 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
                 entry_point: Some(fragment),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: FORMAT,
+                    format: LIGHT_FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -703,6 +870,69 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
             pixels: vec![255; 4],
         },
     }
+}
+
+fn tone_pipeline(device: &wgpu::Device) -> TonePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("tickora tone"),
+        source: wgpu::ShaderSource::Wgsl(TONE_SHADER.into()),
+    });
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("tickora tone"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(TONE_UNIFORM_SIZE),
+                },
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("tickora tone"),
+        bind_group_layouts: &[Some(&layout)],
+        ..Default::default()
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("tickora tone"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    TonePipeline { pipeline, layout }
 }
 
 #[cfg(test)]

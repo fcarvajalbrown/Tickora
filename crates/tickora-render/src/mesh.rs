@@ -269,7 +269,8 @@ mod tests {
             .collect();
         assert_eq!(names, ["metal", "wall"]);
         let wall = primitive(&marker, "wall");
-        let expected = [160.0 / 255.0, 125.0 / 255.0, 88.0 / 255.0, 1.0];
+        let expected = [160.0f64, 125.0, 88.0, 255.0].map(|byte| (byte / 255.0).powf(2.2) as f32);
+        let expected = [expected[0], expected[1], expected[2], 1.0];
         assert!(
             wall.base_color
                 .iter()

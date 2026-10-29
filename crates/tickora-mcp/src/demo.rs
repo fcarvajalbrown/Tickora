@@ -31,6 +31,8 @@ pub const SPAWN_SPAN: u32 = 100;
 pub const UNIT_CM: f64 = 25.0;
 pub const EYE_HEIGHT_CM: f64 = 170.0;
 pub const AMBIENT: [f32; 3] = [0.15, 0.15, 0.15];
+pub const EXPOSURE: f32 = 1.0;
+pub const WHITE_POINT: f32 = 11.2;
 pub const LIGHT_HEIGHT_CM: f64 = 300.0;
 pub const LIGHT_INTENSITY: f32 = 30.0;
 pub const LIGHT_RADIUS_CM: f64 = 2000.0;
@@ -228,6 +230,8 @@ impl Arena {
         Scene3 {
             background: BACKGROUND,
             ambient: AMBIENT,
+            exposure: EXPOSURE,
+            white_point: WHITE_POINT,
             instances,
             lights,
             textures,

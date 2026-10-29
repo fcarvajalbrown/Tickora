@@ -4,8 +4,8 @@ use serde_json::{Map, Value, json};
 use tickora_render::camera::DEFAULT_FOV;
 use tickora_render::math::Vec3;
 use tickora_render::{
-    AdapterChoice, Camera, DEFAULT_SIZE, Image, OrthoCamera, PerspectiveCamera, Renderer, Rotator,
-    ViewMode, Viewport,
+    AdapterChoice, Camera, DEFAULT_SIZE, Display, Image, OrthoCamera, PerspectiveCamera, Renderer,
+    Rotator, ViewMode, Viewport,
 };
 
 use crate::host::Host;
@@ -106,8 +106,14 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
         view @ View::Perspective { .. } => {
             let scene = host.scene3();
             let camera = view.perspective(&scene.camera)?;
-            let (image, off_screen) =
-                renderer.render3(&scene, &camera, shot.view_mode, shot.width, shot.height)?;
+            let (image, off_screen) = renderer.render3(
+                &scene,
+                &camera,
+                shot.view_mode,
+                &Display::default(),
+                shot.width,
+                shot.height,
+            )?;
             (image, Camera::Perspective(camera), off_screen)
         }
     };
