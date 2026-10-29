@@ -38,6 +38,49 @@ class CheckerMapsTest(unittest.TestCase):
             self.assertEqual(pixels[0, 0].tolist(), [255, 0, 0])
             self.assertEqual(pixels[0, 7].tolist(), [0, 0, 255])
 
+    def test_bar_mask_darkens_the_border_and_one_bar_between_panes(self):
+        mask = checker_maps.bar_mask(16, 2, 2, 1)
+        self.assertEqual(np.flatnonzero(mask).tolist(), [0, 7, 8, 15])
+        self.assertEqual(np.flatnonzero(checker_maps.bar_mask(16, 1, 2, 0)).tolist(), [])
+
+    def test_bar_mask_rejects_borders_that_fill_the_gobo(self):
+        with self.assertRaises(SystemExit):
+            checker_maps.bar_mask(16, 2, 2, 8)
+
+    def test_grid_crosses_column_and_row_bars(self):
+        image = checker_maps.grid(16, [2, 1], 2, 1, [255, 255, 255], [0, 0, 0])
+        self.assertEqual(image.shape, (16, 16, 3))
+        self.assertEqual(image[0, 4].tolist(), [0, 0, 0])
+        self.assertEqual(image[4, 7].tolist(), [0, 0, 0])
+        self.assertEqual(image[4, 4].tolist(), [255, 255, 255])
+        self.assertEqual(image[4, 12].tolist(), [255, 255, 255])
+
+    def test_levels_make_one_grey_frame_per_value(self):
+        frames = checker_maps.gobo_frames({"kind": "levels", "size": 16, "levels": [255, 90]})
+        self.assertEqual(len(frames), 2)
+        self.assertTrue((frames[0] == 255).all())
+        self.assertTrue((frames[1] == 90).all())
+
+    def test_unknown_gobo_kind_is_an_error(self):
+        with self.assertRaises(SystemExit):
+            checker_maps.gobo_frames({"kind": "spiral", "size": 16})
+
+    def test_gobos_write_one_file_or_one_per_frame_byte_stable(self):
+        spec = {"out": "gobos", "gobos": {
+            "bars": {"kind": "grid", "size": 16, "panes": [2, 2], "bar": 2, "border": 1, "light": [255, 255, 255], "dark": [0, 0, 0]},
+            "flicker": {"kind": "levels", "size": 16, "levels": [255, 128, 64]},
+        }}
+        written = []
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / "spec.json").write_text(json.dumps(spec), encoding="utf-8")
+                checker_maps.main(["--spec", str(root / "spec.json"), "--root", str(root)])
+                files = sorted(path.name for path in (root / "gobos").iterdir())
+                written.append({name: (root / "gobos" / name).read_bytes() for name in files})
+        self.assertEqual(sorted(written[0]), ["bars.png", "flicker_0.png", "flicker_1.png", "flicker_2.png"])
+        self.assertEqual(written[0], written[1])
+
 
 if __name__ == "__main__":
     unittest.main()

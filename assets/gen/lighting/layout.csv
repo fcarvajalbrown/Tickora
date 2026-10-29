@@ -1,0 +1,5 @@
+piece,x_cm,y_cm,z_cm,yaw_deg,scale,scale_x,folder,instance
+room,0.0,0.0,0.0,0.0,1.0,1.0,Props,0
+crate,-150.0,-150.0,0.0,0.0,1.0,1.0,Props,0
+crate,150.0,150.0,0.0,0.0,1.0,1.0,Props,0
+crate,400.0,-250.0,0.0,0.0,1.0,1.0,Props,0

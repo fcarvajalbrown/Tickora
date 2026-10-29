@@ -1,0 +1,39 @@
+{
+ "meshes": {
+  "crate": {
+   "collision": "none",
+   "files": [
+    "meshes/crate.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "wood"
+   ],
+   "name": "crate",
+   "piece": "crate",
+   "triangles": 12
+  },
+  "room": {
+   "collision": "none",
+   "files": [
+    "meshes/room.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "calamina",
+    "stone"
+   ],
+   "name": "room",
+   "piece": "room",
+   "triangles": 96
+  }
+ },
+ "pieces": {
+  "crate": [
+   "crate"
+  ],
+  "room": [
+   "room"
+  ]
+ }
+}
