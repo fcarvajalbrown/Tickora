@@ -2,6 +2,7 @@ pub mod camera;
 pub mod compare;
 pub mod golden;
 pub mod image;
+pub mod light;
 pub mod math;
 pub mod mesh;
 pub mod renderer;
