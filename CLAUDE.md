@@ -6,9 +6,10 @@ Read `PRD.md` first.
 
 - Two goals, equally important: make horror games fast, the way Corpofobia was made, with visuals like Amnesia: The Bunker, built with an agent; and GitHub stars and discoverability. Weigh every feature and decision against both.
 
-## Unreal Engine as the model
+## HPL3 first, Unreal as a would-like
 
-- Hard rule: copy from Unreal Engine anything that can be transported and does not collide with the PRD's original mission. When a feature has an Unreal counterpart (camera, viewports, screenshots, automation tests, naming), start from how Unreal does it.
+- Hard rule: HPL3, the engine behind Amnesia: The Bunker that Tickora reverse-engineers, comes first. Wherever its choices are known (Frictional's tech posts, `docs/research/bunker-look.md`, `research-private/bunker/NOTES.md`), follow HPL3, because that keeps the engine simpler to code.
+- Unreal is a would-like, mainly for Blueprints-style scripting and mesh modification, and the reference where HPL3 is silent. Features already built from Unreal (camera, viewports, screenshots, automation tests, naming) stay as they are.
 
 ## Genre: Frictional-style, first-person 3D
 
