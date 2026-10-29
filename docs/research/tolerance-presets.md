@@ -315,3 +315,288 @@ Phase 8 item 2 (`docs/design/phase-8-linear-hdr.md`) moved perspective frames to
 | all | warp-local / warp-ci | 82 | 0.02% | 0.78% | 0.00% | 0.00% |
 | all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
 | all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+## Spot lights and gobos (phase 8 item 3)
+
+Phase 8 item 3 (`docs/design/phase-8-spot-lights.md`) replaced Karis with HPL3's linear distance falloff, set the arena's lights to intensity 1.5, and added spot lights with an f32 cosine fade, a projected gobo read with nearest lookups, and the lighting scene. The table was measured again with the same command and four adapters, once per scenario: the ten arena perspective shots (`--shots perspective`) and all twelve lighting shots (no `--shots`, since every lighting shot is perspective).
+
+- Frames: `rtx2050` and `warp-local` recorded on this machine at commit 1c5444f; `warp-ci` and `lavapipe-ci` from CI run 40917327743, the run whose artifacts became the goldens. Exposure 1.0, white point 11.2, gamma 2.2.
+- Arena: the four top shots and the six unlit and wireframe perspective shots in the artifacts match the committed goldens byte for byte on both CI adapters. The lit shots differ between RTX 2050 and the software adapters by one unit over up to 3.98% of the pixels and 24.61% of a block; at channel tolerance 1 every pair is back to the phase 8 item 2 shares.
+- Lighting, RTX 2050 against the software adapters: one-unit rounding over the smooth spot and point light gradients, up to 61% of the pixels in `spot-tight`; at channel tolerance 1 it falls to 0.31% of the pixels and 6.25% of a block, and to 0.00% with the neighbour search.
+- Lighting, lavapipe against WARP: `spot-round` and `spot-tight`, the two spots without a gobo, differ by up to 8 units over 4.6% to 4.9% of the pixels and 62.50% to 68.75% of a block. This is new: f32 rounding in the cosine fade's `sqrt` and `pow`. It is gone at channel tolerance 8. The gobo shots (`gobo-bars`, `flicker-*`) differ by at most one unit, so nearest lookups land on the same texels on all four adapters.
+- The worst pair left at channel tolerance 16 is lavapipe's wireframe lines in `overview-wireframe` (largest difference 132, as for the arena's lines): 0.09% of the frame and 5.47% of a block with the neighbour search.
+- Criterion check: at channel tolerance 16 with the neighbour search, every pair in both scenarios is within 0.10 of a block and 0.02 of the frame (worst: 0.09% and 5.47%), so `low` passes every adapter pair. The presets are unchanged.
+
+### Results (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| perspective-1-default | rtx2050 / warp-local | 34 | 0.22% | 7.42% | 0.08% | 4.30% |
+| perspective-1-default | rtx2050 / warp-ci | 1 | 0.22% | 7.42% | 0.07% | 4.30% |
+| perspective-1-default | rtx2050 / lavapipe-ci | 34 | 0.21% | 7.42% | 0.07% | 4.30% |
+| perspective-1-default | warp-local / warp-ci | 34 | 0.00% | 0.39% | 0.00% | 0.39% |
+| perspective-1-default | warp-local / lavapipe-ci | 34 | 0.02% | 0.78% | 0.00% | 0.78% |
+| perspective-1-default | warp-ci / lavapipe-ci | 34 | 0.02% | 0.78% | 0.01% | 0.78% |
+| perspective-1-default-unlit | rtx2050 / warp-local | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-default-unlit | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-default-unlit | rtx2050 / lavapipe-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-default-unlit | warp-local / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-default-unlit | warp-local / lavapipe-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-default-unlit | warp-ci / lavapipe-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-default-wireframe | rtx2050 / warp-local | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-default-wireframe | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-default-wireframe | rtx2050 / lavapipe-ci | 231 | 0.03% | 2.73% | 0.00% | 0.39% |
+| perspective-1-default-wireframe | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-default-wireframe | warp-local / lavapipe-ci | 231 | 0.03% | 2.73% | 0.00% | 0.39% |
+| perspective-1-default-wireframe | warp-ci / lavapipe-ci | 231 | 0.03% | 2.73% | 0.00% | 0.39% |
+| perspective-1-entity0 | rtx2050 / warp-local | 56 | 3.98% | 24.61% | 1.01% | 13.28% |
+| perspective-1-entity0 | rtx2050 / warp-ci | 43 | 3.96% | 24.61% | 1.01% | 13.28% |
+| perspective-1-entity0 | rtx2050 / lavapipe-ci | 43 | 3.97% | 24.61% | 1.02% | 13.28% |
+| perspective-1-entity0 | warp-local / warp-ci | 56 | 0.02% | 0.78% | 0.00% | 0.39% |
+| perspective-1-entity0 | warp-local / lavapipe-ci | 56 | 0.03% | 0.78% | 0.00% | 0.00% |
+| perspective-1-entity0 | warp-ci / lavapipe-ci | 1 | 0.01% | 0.78% | 0.00% | 0.39% |
+| perspective-1-entity0-unlit | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| perspective-1-entity0-unlit | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-entity0-unlit | rtx2050 / lavapipe-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-entity0-unlit | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| perspective-1-entity0-unlit | warp-local / lavapipe-ci | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| perspective-1-entity0-unlit | warp-ci / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-entity0-wireframe | rtx2050 / warp-local | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-entity0-wireframe | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-entity0-wireframe | rtx2050 / lavapipe-ci | 231 | 0.07% | 3.91% | 0.00% | 0.78% |
+| perspective-1-entity0-wireframe | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-entity0-wireframe | warp-local / lavapipe-ci | 231 | 0.07% | 3.91% | 0.00% | 0.78% |
+| perspective-1-entity0-wireframe | warp-ci / lavapipe-ci | 231 | 0.07% | 3.91% | 0.00% | 0.78% |
+| perspective-1-overview | rtx2050 / warp-local | 62 | 1.12% | 12.50% | 0.39% | 8.59% |
+| perspective-1-overview | rtx2050 / warp-ci | 1 | 1.11% | 12.50% | 0.39% | 8.59% |
+| perspective-1-overview | rtx2050 / lavapipe-ci | 1 | 1.10% | 12.50% | 0.39% | 8.59% |
+| perspective-1-overview | warp-local / warp-ci | 62 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-overview | warp-local / lavapipe-ci | 62 | 0.01% | 0.78% | 0.00% | 0.39% |
+| perspective-1-overview | warp-ci / lavapipe-ci | 1 | 0.01% | 0.39% | 0.00% | 0.39% |
+| perspective-1-overview-unlit | rtx2050 / warp-local | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-overview-unlit | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-unlit | rtx2050 / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-unlit | warp-local / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-overview-unlit | warp-local / lavapipe-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| perspective-1-overview-unlit | warp-ci / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-wireframe | rtx2050 / warp-local | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-wireframe | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-wireframe | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.39% |
+| perspective-1-overview-wireframe | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| perspective-1-overview-wireframe | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.39% |
+| perspective-1-overview-wireframe | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.39% |
+| perspective-600-default | rtx2050 / warp-local | 34 | 0.23% | 7.42% | 0.09% | 4.30% |
+| perspective-600-default | rtx2050 / warp-ci | 1 | 0.23% | 7.42% | 0.08% | 4.30% |
+| perspective-600-default | rtx2050 / lavapipe-ci | 34 | 0.23% | 7.42% | 0.08% | 4.30% |
+| perspective-600-default | warp-local / warp-ci | 34 | 0.00% | 0.39% | 0.00% | 0.39% |
+| perspective-600-default | warp-local / lavapipe-ci | 34 | 0.02% | 0.78% | 0.00% | 0.39% |
+| perspective-600-default | warp-ci / lavapipe-ci | 34 | 0.02% | 0.78% | 0.00% | 0.78% |
+
+### Worst over all shots, per pair (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 3.98% | 24.61% | 1.01% | 13.28% |
+| all | rtx2050 / warp-ci | 80 | 3.96% | 24.61% | 1.01% | 13.28% |
+| all | rtx2050 / lavapipe-ci | 231 | 3.97% | 24.61% | 1.02% | 13.28% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.01% | 0.78% |
+
+### Worst over all shots, per pair, with a channel tolerance of 1 (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+### Worst over all shots, per pair, with a channel tolerance of 2 (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+### Worst over all shots, per pair, with a channel tolerance of 4 (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.39% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+### Worst over all shots, per pair, with a channel tolerance of 8 (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+### Worst over all shots, per pair, with a channel tolerance of 16 (phase 8 item 3, arena)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 80 | 0.00% | 0.39% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-local / warp-ci | 80 | 0.02% | 0.78% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+| all | warp-ci / lavapipe-ci | 231 | 0.18% | 3.91% | 0.00% | 0.78% |
+
+### Results (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| flicker-0 | rtx2050 / warp-local | 1 | 36.65% | 100.00% | 32.29% | 100.00% |
+| flicker-0 | rtx2050 / warp-ci | 1 | 36.65% | 100.00% | 32.29% | 100.00% |
+| flicker-0 | rtx2050 / lavapipe-ci | 1 | 36.66% | 100.00% | 32.29% | 100.00% |
+| flicker-0 | warp-local / warp-ci | 1 | 0.01% | 0.39% | 0.00% | 0.39% |
+| flicker-0 | warp-local / lavapipe-ci | 1 | 0.05% | 0.78% | 0.01% | 0.39% |
+| flicker-0 | warp-ci / lavapipe-ci | 1 | 0.04% | 0.39% | 0.01% | 0.39% |
+| flicker-12 | rtx2050 / warp-local | 1 | 36.61% | 100.00% | 32.39% | 100.00% |
+| flicker-12 | rtx2050 / warp-ci | 1 | 36.61% | 100.00% | 32.39% | 100.00% |
+| flicker-12 | rtx2050 / lavapipe-ci | 1 | 36.60% | 100.00% | 32.39% | 100.00% |
+| flicker-12 | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.00% |
+| flicker-12 | warp-local / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| flicker-12 | warp-ci / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| flicker-18 | rtx2050 / warp-local | 1 | 37.63% | 100.00% | 32.39% | 100.00% |
+| flicker-18 | rtx2050 / warp-ci | 1 | 37.63% | 100.00% | 32.39% | 100.00% |
+| flicker-18 | rtx2050 / lavapipe-ci | 1 | 37.64% | 100.00% | 32.40% | 100.00% |
+| flicker-18 | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.00% |
+| flicker-18 | warp-local / lavapipe-ci | 1 | 0.04% | 1.17% | 0.02% | 0.78% |
+| flicker-18 | warp-ci / lavapipe-ci | 1 | 0.04% | 1.17% | 0.02% | 0.78% |
+| flicker-24 | rtx2050 / warp-local | 1 | 36.61% | 100.00% | 32.35% | 100.00% |
+| flicker-24 | rtx2050 / warp-ci | 1 | 36.62% | 100.00% | 32.35% | 100.00% |
+| flicker-24 | rtx2050 / lavapipe-ci | 1 | 36.61% | 100.00% | 32.36% | 100.00% |
+| flicker-24 | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.39% |
+| flicker-24 | warp-local / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| flicker-24 | warp-ci / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| flicker-6 | rtx2050 / warp-local | 1 | 37.06% | 100.00% | 32.43% | 100.00% |
+| flicker-6 | rtx2050 / warp-ci | 1 | 37.06% | 100.00% | 32.43% | 100.00% |
+| flicker-6 | rtx2050 / lavapipe-ci | 1 | 37.06% | 100.00% | 32.44% | 100.00% |
+| flicker-6 | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.00% |
+| flicker-6 | warp-local / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| flicker-6 | warp-ci / lavapipe-ci | 1 | 0.05% | 0.78% | 0.02% | 0.39% |
+| gobo-bars | rtx2050 / warp-local | 1 | 59.25% | 100.00% | 56.58% | 100.00% |
+| gobo-bars | rtx2050 / warp-ci | 1 | 59.25% | 100.00% | 56.58% | 100.00% |
+| gobo-bars | rtx2050 / lavapipe-ci | 1 | 59.24% | 100.00% | 56.58% | 100.00% |
+| gobo-bars | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| gobo-bars | warp-local / lavapipe-ci | 1 | 0.04% | 1.56% | 0.01% | 0.78% |
+| gobo-bars | warp-ci / lavapipe-ci | 1 | 0.04% | 1.56% | 0.01% | 0.78% |
+| overview | rtx2050 / warp-local | 1 | 49.93% | 100.00% | 48.02% | 100.00% |
+| overview | rtx2050 / warp-ci | 1 | 49.93% | 100.00% | 48.02% | 100.00% |
+| overview | rtx2050 / lavapipe-ci | 1 | 49.96% | 100.00% | 48.04% | 100.00% |
+| overview | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.39% |
+| overview | warp-local / lavapipe-ci | 1 | 0.14% | 2.34% | 0.11% | 1.95% |
+| overview | warp-ci / lavapipe-ci | 1 | 0.14% | 2.34% | 0.11% | 1.95% |
+| overview-unlit | rtx2050 / warp-local | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-unlit | rtx2050 / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-unlit | rtx2050 / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-unlit | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-unlit | warp-local / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-unlit | warp-ci / lavapipe-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-wireframe | rtx2050 / warp-local | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| overview-wireframe | rtx2050 / warp-ci | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| overview-wireframe | rtx2050 / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| overview-wireframe | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| overview-wireframe | warp-local / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| overview-wireframe | warp-ci / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| point-falloff | rtx2050 / warp-local | 1 | 37.20% | 100.00% | 34.27% | 100.00% |
+| point-falloff | rtx2050 / warp-ci | 1 | 37.21% | 100.00% | 34.27% | 100.00% |
+| point-falloff | rtx2050 / lavapipe-ci | 95 | 37.21% | 100.00% | 34.28% | 100.00% |
+| point-falloff | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.39% |
+| point-falloff | warp-local / lavapipe-ci | 95 | 0.16% | 1.95% | 0.09% | 1.17% |
+| point-falloff | warp-ci / lavapipe-ci | 95 | 0.16% | 1.95% | 0.09% | 1.17% |
+| spot-round | rtx2050 / warp-local | 8 | 59.93% | 100.00% | 58.31% | 100.00% |
+| spot-round | rtx2050 / warp-ci | 8 | 59.93% | 100.00% | 58.31% | 100.00% |
+| spot-round | rtx2050 / lavapipe-ci | 8 | 59.95% | 100.00% | 58.33% | 100.00% |
+| spot-round | warp-local / warp-ci | 0 | 0.00% | 0.00% | 0.00% | 0.00% |
+| spot-round | warp-local / lavapipe-ci | 8 | 4.62% | 62.50% | 4.30% | 62.50% |
+| spot-round | warp-ci / lavapipe-ci | 8 | 4.62% | 62.50% | 4.30% | 62.50% |
+| spot-tight | rtx2050 / warp-local | 1 | 61.07% | 100.00% | 59.56% | 100.00% |
+| spot-tight | rtx2050 / warp-ci | 1 | 61.07% | 100.00% | 59.56% | 100.00% |
+| spot-tight | rtx2050 / lavapipe-ci | 8 | 61.09% | 100.00% | 59.57% | 100.00% |
+| spot-tight | warp-local / warp-ci | 1 | 0.00% | 0.39% | 0.00% | 0.39% |
+| spot-tight | warp-local / lavapipe-ci | 8 | 4.87% | 68.75% | 4.56% | 68.75% |
+| spot-tight | warp-ci / lavapipe-ci | 8 | 4.87% | 68.75% | 4.56% | 68.75% |
+
+### Worst over all shots, per pair (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 61.07% | 100.00% | 59.56% | 100.00% |
+| all | rtx2050 / warp-ci | 96 | 61.07% | 100.00% | 59.56% | 100.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 61.09% | 100.00% | 59.57% | 100.00% |
+| all | warp-local / warp-ci | 1 | 0.01% | 0.39% | 0.00% | 0.39% |
+| all | warp-local / lavapipe-ci | 132 | 4.87% | 68.75% | 4.56% | 68.75% |
+| all | warp-ci / lavapipe-ci | 132 | 4.87% | 68.75% | 4.56% | 68.75% |
+
+### Worst over all shots, per pair, with a channel tolerance of 1 (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-local / warp-ci | 1 | 0.00% | 0.00% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-ci / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+
+### Worst over all shots, per pair, with a channel tolerance of 2 (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-local / warp-ci | 1 | 0.00% | 0.00% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-ci / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+
+### Worst over all shots, per pair, with a channel tolerance of 4 (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 96 | 0.31% | 6.25% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-local / warp-ci | 1 | 0.00% | 0.00% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+| all | warp-ci / lavapipe-ci | 132 | 4.76% | 68.75% | 4.49% | 68.75% |
+
+### Worst over all shots, per pair, with a channel tolerance of 8 (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| all | warp-local / warp-ci | 1 | 0.00% | 0.00% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| all | warp-ci / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+
+### Worst over all shots, per pair, with a channel tolerance of 16 (phase 8 item 3, lighting)
+
+| Shot | Pair | Largest channel difference | Differing pixels | Worst 16x16 block | Differing pixels, neighbour search | Worst 16x16 block, neighbour search |
+| --- | --- | --- | --- | --- | --- | --- |
+| all | rtx2050 / warp-local | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / warp-ci | 96 | 0.01% | 0.78% | 0.00% | 0.00% |
+| all | rtx2050 / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| all | warp-local / warp-ci | 1 | 0.00% | 0.00% | 0.00% | 0.00% |
+| all | warp-local / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
+| all | warp-ci / lavapipe-ci | 132 | 0.42% | 7.03% | 0.09% | 5.47% |
