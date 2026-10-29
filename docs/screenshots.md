@@ -25,7 +25,7 @@ Every result carries a camera string, for example `perspective -2500 0 170 0 0 0
 
 ## The arena in 3D
 
-One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes Unreal X, so the top view shows what a perspective camera looking straight down with yaw 0 sees. Each entity is a 1 m cube from `assets/gen/render_fixtures/meshes/cube.glb`, coloured by hp. The floor is `floor.glb` scaled to the 25 m spawn square, its top at Z 0, with the `checker.png` texture from `psx_bake`. Two point lights hang 3 m up at X -625 and Y plus or minus 625, intensity 30, attenuation radius 20 m, over an ambient of 0.15. Exposure is 1.0 and the white point 11.2.
+One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes Unreal X, so the top view shows what a perspective camera looking straight down with yaw 0 sees. Each entity is a 1 m cube from `assets/gen/render_fixtures/meshes/cube.glb`, coloured by hp. The floor is `floor.glb` scaled to the 25 m spawn square, its top at Z 0, with the `checker.png` texture from `psx_bake`. Two point lights hang 3 m up at X -625 and Y plus or minus 625, intensity 1.5, attenuation radius 20 m and falloff power 1, over an ambient of 0.15. The intensity was 30 under Unreal's Karis falloff; Felipe set 1.5 for HPL3's linear falloff after comparing frames at 1.5, 3 and 6. Exposure is 1.0 and the white point 11.2.
 
 ## The lighting scene
 
@@ -36,7 +36,7 @@ Scenarios with `"host": "lighting"` run on a fixed room built for lighting work 
 - Two ceiling spots over X 300 with the four-frame `flicker` gobo, 6 ticks a frame: Loop at Y 220, Oscillate at Y -220.
 - Two point lights at Z 100 and Y plus or minus 250 with a 3 m radius: falloff power 2 at Y 250 and 1 at Y -250.
 
-The gobos come from `tools/checker_maps` and `specs/lighting/gobos.json`, 64 by 64 pixels.
+Every light has intensity 4, chosen by Felipe from frames at 2, 4 and 8. The gobos come from `tools/checker_maps` and `specs/lighting/gobos.json`, 64 by 64 pixels; the `cage` gobo is generated but no light uses it yet (Felipe: kept for later).
 
 ## Drawing
 
