@@ -8,9 +8,9 @@ rust-version.workspace = true
 [dependencies]
 serde = "1.0.229"
 serde_json = "1.0.154"
-tickora-audio = { version = "0.6.0", path = "../tickora-audio" }
-tickora-core = { version = "0.6.0", path = "../tickora-core" }
-tickora-render = { version = "0.6.0", path = "../tickora-render" }
+tickora-audio = { version = "0.7.0", path = "../tickora-audio" }
+tickora-core = { version = "0.7.0", path = "../tickora-core" }
+tickora-render = { version = "0.7.0", path = "../tickora-render" }
 
 [lints]
 workspace = true

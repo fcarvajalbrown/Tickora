@@ -2,6 +2,15 @@
 
 Finished phases, moved from `ROADMAP.md`, newest first.
 
+## Phase 7: audio, 0.7.0
+
+Status: **Done** (0.7.0, CI green on Windows and Linux, run 40764387479). Designs in `docs/design/phase-7-noise.md`, `phase-7-audio-output.md`, `phase-7-sounds.md` and `phase-7-hearing.md`; prior art in `docs/research/agent-hearing.md`.
+
+1. Done. Noise as simulation state: events with position and loudness the monster can hear (`docs/design/phase-7-noise.md`, CI run 40697705009).
+2. Done. Headless audio output a scenario can check; Keel for mixing and mastering (`docs/design/phase-7-audio-output.md`, CI run 40717357273).
+3. Done. CC0 and generated sounds through the phase 5 tools (`docs/design/phase-7-sounds.md`, CI run 40731326989).
+4. Done. Agent hearing: Corpofobia's `audio_listen` describes rendered audio in text through `tickora_listen` and the scenario CLI (`docs/design/phase-7-hearing.md`, CI run 40764387479).
+
 ## Phase 6: grey-box 3D renderer, 0.6.0
 
 Status: **Done** (0.6.0, CI green on WARP and lavapipe, run 40619161517). ADRs 0002 and 0003; design in `docs/design/phase-6-renderer.md`; tolerance measurement in `docs/research/tolerance-presets.md`.

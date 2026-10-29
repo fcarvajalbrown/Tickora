@@ -4,6 +4,27 @@ All notable changes to Tickora, an agent-native game engine in Rust for first-pe
 
 ## [Unreleased]
 
+## [0.7.0]
+
+Audio: noise as simulation state a monster can hear, a headless integer mixer that renders one block per tick, CC0 and generated sounds levelled with Keel, and agent hearing, which describes rendered audio in text and checks it in scenarios.
+
+### Added
+
+- Noise and hearing in `tickora-core` after Unreal's hearing sense (`docs/design/phase-7-noise.md`): `Location`, `Noise`, `Hearing` and `HeardNoise` in Unreal centimetres, heard when `distance <= HearingRange * Loudness` (plus `MaxRange * Loudness` when set), loudest noise wins, ties to the lower entity index; all of it hashed state.
+- `tickora-audio`, an offline integer mixer after Unreal's offline render (`docs/design/phase-7-audio-output.md`): 48,000 Hz, 800 samples per tick, 24-bit stereo; sine, square, noise and PCM sources with envelopes, seeded gain and pitch variation, linear attenuation, a mix graph with submixes, 64 voices with equal-power panning by listener yaw, per-tick capture with a hash and dBFS meters, and a WAV writer.
+- Takes picked with MetaSound's No Repeats or the Sound Cue's without-replacement mode, with integer weights; the pick history is hashed.
+- Audio assertions in scenarios and `--wav <path>` on the scenario CLI, which writes the whole run by replaying its input log.
+- MCP tool 9, `tickora_listen`: measures a range of ticks, optionally writes a WAV.
+- The arena plays sounds: a listener at the default camera, a generated `spawn` sound and three BigSoundBank punch takes for `hit`, through an `sfx` submix (`docs/design/phase-7-sounds.md`).
+- `tools/audio_bake` levels sounds with Keel's meters (sustained sounds to -18 LUFS momentary max, transient takes by a shared trim); `tools/sfx_synth` generates sounds from a JSON spec; `tools/listen_batch` joins candidate takes into one numbered listening file; `build_credits` writes Markdown when the output ends in `.md`.
+- Agent hearing (`docs/design/phase-7-hearing.md`): `tickora_listen` lists which sounds started and stopped at which tick and describes loudness, true peak, spectrum, onsets, tones, stereo width, voice likeness, seams and loops in a few lines of text, with ticks beside seconds, plus a spectrogram sheet with every sound start drawn on it. The measures and wording are a Rust port of Corpofobia's `listen.py`, kept in `tools/audio_listen/` with a test that checks both agree on the arena run.
+- `--listen` and `--sheet <path>` on the scenario CLI, and scenario checks on heard loudness (`loudness_lufs`), onset count and named sound starts. `scenarios/arena.json` now has 42 assertions, 12 of them on audio.
+
+### Changed
+
+- The arena's state and replay hashes were re-pinned twice, once for its listener and sound entities and once for the hashed takes; positions, hp and all 14 screenshots are unchanged.
+- `Arena::new` takes the seed for its audio random stream, and `Host` gains `audio()` and `write_wav()`.
+
 ## [0.6.0]
 
 Grey-box 3D renderer: perspective camera after Unreal's viewport, GLB meshes, depth buffer, PSX textures, lit point lights, the arena in first-person 3D, Unreal's low, medium and high screenshot tolerances, and 3D goldens checked on four adapters.
@@ -90,7 +111,8 @@ Deterministic simulation core with replay.
 - `Fx` Q32.32 fixed point (ADR 0001) and a sparse-set ECS with field introspection.
 - CI on Windows and Linux in debug and release.
 
-[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/fcarvajalbrown/Tickora/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fcarvajalbrown/Tickora/compare/v0.3.0...v0.4.0

@@ -6,7 +6,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-tickora-render = { version = "0.6.0", path = "../../crates/tickora-render" }
+tickora-render = { version = "0.7.0", path = "../../crates/tickora-render" }
 
 [lints]
 workspace = true

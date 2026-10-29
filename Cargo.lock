@@ -791,18 +791,18 @@ dependencies = [
 
 [[package]]
 name = "tickora-audio"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "tickora-core",
 ]
 
 [[package]]
 name = "tickora-core"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "tickora-mcp"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "tickora-render"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "gltf",
  "png",
@@ -833,7 +833,7 @@ dependencies = [
 
 [[package]]
 name = "tolerance-table"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "tickora-render",
 ]

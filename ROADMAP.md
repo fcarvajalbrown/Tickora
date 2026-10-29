@@ -8,24 +8,14 @@ Each phase is one `0.MINOR.0` release; its CHANGELOG entry and git tag use the s
 
 ## Open items
 
-- Phase 7 is in progress: audio (0.7.0); items 1 to 4 are done.
 - Felipe decides: where the demo lives and the default host (phase 9).
 - Felipe decides: the demo's game design (phase 9).
 - Felipe decides: what counts as proof and whether CI runs it (phase 9).
 - Felipe decides: project name, license and release scope (phase 10).
 
-## Phases 1 to 6: core, MCP, scenarios, screenshots, asset pipeline, 3D renderer
+## Phases 1 to 7: core, MCP, scenarios, screenshots, asset pipeline, 3D renderer, audio
 
-Status: **Done** (0.1.0 to 0.6.0). Full text in the history.
-
-## Phase 7: audio, 0.7.0
-
-Status: **In Progress**.
-
-1. Done. Noise as simulation state: events with position and loudness the monster can hear (`docs/design/phase-7-noise.md`, CI run 40697705009).
-2. Done. Headless audio output a scenario can check; Keel for mixing and mastering (`docs/design/phase-7-audio-output.md`, CI run 40717357273).
-3. Done. CC0 and generated sounds through the phase 5 tools (`docs/design/phase-7-sounds.md`, CI run 40731326989).
-4. Done. Agent hearing: Corpofobia's `audio_listen` describes rendered audio in text through `tickora_listen` and the scenario CLI (`docs/design/phase-7-hearing.md`, CI run 40764387479).
+Status: **Done** (0.1.0 to 0.7.0). Full text in the history.
 
 ## Phase 8: Bunker-level visuals, 0.8.0
 
