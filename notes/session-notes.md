@@ -34,7 +34,7 @@ Current state:
 - Credits follow Corpofobia's `.claude/rules/assets-and-credits.md`: CC0 from shared hosts never credited, one-person own sites credited by role with a cited thank-you; header ends "© Felipe Carvajal Brown. All rights reserved."
 
 Open:
-- Next: phase 8 item 1, study Amnesia: The Bunker's look, findings in `docs/research/`; waits on Felipe's go-ahead.
+- Phase 8 item 1 done: `docs/research/bunker-look.md` (HPL3 tech posts plus a feature-name search of the Bunker exe, raw names in `research-private/bunker/NOTES.md`). Biggest gap: Tickora lights in gamma space with no HDR or tone mapping. Next: Felipe fixes the rest of the phase 8 list and its order from the doc's gap list.
 - README's status paragraph still says phases 1 to 4 are done and lists the asset pipeline, renderer and audio as next.
 - Hearing: listen.py's K-weighting is an RBJ approximation and reads about 0.25 dB below a strict BS.1770 meter (Keel's pyloudnorm); the port keeps listen.py's filter on purpose. The analysis cap is 36,000 ticks at about 1.6 GB peak (Felipe's choice).
 - Corpofobia's session (corpofobia-6d) was sent a proposal to adopt the same hearing; its answer was not read in chat 13.
