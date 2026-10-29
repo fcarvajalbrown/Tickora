@@ -22,7 +22,7 @@ Status: **Done** (0.1.0 to 0.7.0). Full text in the history.
 Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PRD section 4).
 
 1. Done. Study Amnesia: The Bunker's look; findings in `docs/research/bunker-look.md` before the rest of the list is fixed.
-2. Done. Linear space and HDR (design `docs/design/phase-8-linear-hdr.md`, CI run 40891832875): sRGB decode of colour textures, 16-bit float light buffer, Hable's filmic curve with a white point, manual exposure, one gamma encode at the end.
+2. Done. Linear space and HDR (design `docs/design/phase-8-linear-hdr.md`, CI run 40891832875): 2.2 power decode of colour textures, 16-bit float light buffer, Hable's filmic curve with a white point, manual exposure, one gamma encode at the end.
 3. Not Started. Spot lights, with gobo textures.
 4. Not Started. Shadows from point and spot lights, and specular highlights.
 5. Not Started. Normal maps, mipmaps, filtered and anisotropic sampling.
