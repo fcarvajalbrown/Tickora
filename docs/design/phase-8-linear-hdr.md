@@ -1,6 +1,6 @@
 # Phase 8 design, item 2: linear space and HDR
 
-Status: draft, waiting for Felipe's approval. No code before that.
+Status: approved by Felipe.
 
 Today the phase 6 renderer lights in gamma space. It multiplies 8-bit texture bytes by light values and writes the result straight to an `Rgba8Unorm` target, with no decode, no HDR buffer and no tone mapping (`docs/research/bunker-look.md`, "Tickora today"). This item switches 3D rendering to HPL3's pipeline: decode colour to linear, light into a 16-bit float buffer, apply exposure and Hable's curve with a white point, and encode once at the end.
 
