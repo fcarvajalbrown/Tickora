@@ -23,7 +23,7 @@ Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PR
 
 1. Done. Study Amnesia: The Bunker's look; findings in `docs/research/bunker-look.md` before the rest of the list is fixed.
 2. Done. Linear space and HDR (design `docs/design/phase-8-linear-hdr.md`, CI run 40891832875): 2.2 power decode of colour textures, 16-bit float light buffer, Hable's filmic curve with a white point, manual exposure, one gamma encode at the end.
-3. In Progress. Spot lights, with gobo textures (design `docs/design/phase-8-spot-lights.md`): HPL3 frustum spots, HPL3 distance falloff for spots and points, tick-driven gobo animation, a new lighting scene. Step 1 of 8 done.
+3. Done. Spot lights with gobo textures (design `docs/design/phase-8-spot-lights.md`, CI run 40918042503, goldens from 40917327743): HPL3 frustum spots, HPL3 distance falloff for spots and points, tick-driven gobos, the lighting scene; `low` still passes.
 4. Not Started. Shadows from point and spot lights, and specular highlights.
 5. Not Started. Normal maps, mipmaps, filtered and anisotropic sampling.
 6. Not Started. Exposure areas: per-area exposure in sim volumes that fade from one value to another over ticks, as in HPL3; fog reuses the volumes.
