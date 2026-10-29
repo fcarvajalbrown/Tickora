@@ -7,6 +7,7 @@ pub mod mesh;
 pub mod renderer;
 pub mod scene;
 pub mod scene3;
+pub mod tone;
 
 pub use camera::{Camera, OrthoCamera, PerspectiveCamera, Rotator, Viewport};
 pub use compare::{Comparison, Tolerance, compare};
