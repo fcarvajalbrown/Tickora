@@ -26,10 +26,11 @@ Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PR
 3. Not Started. Spot lights, with gobo textures.
 4. Not Started. Shadows from point and spot lights, and specular highlights.
 5. Not Started. Normal maps, mipmaps, filtered and anisotropic sampling.
-6. Not Started. Distance and height fog, with fog volumes.
-7. Not Started. SSAO; its design settles how screenshots stay deterministic.
-8. Not Started. Bloom and film grain seeded per tick.
-9. Not Started. Sky and ground ambient, then irradiance probes.
+6. Not Started. Exposure areas: per-area exposure in sim volumes that fade from one value to another over ticks, as in HPL3; fog reuses the volumes.
+7. Not Started. Distance and height fog, with fog volumes.
+8. Not Started. SSAO; its design settles how screenshots stay deterministic.
+9. Not Started. Bloom and film grain seeded per tick.
+10. Not Started. Sky and ground ambient, then irradiance probes.
 
 ## Phase 9: coal-mine demo, 0.9.0
 
