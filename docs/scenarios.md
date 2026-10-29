@@ -7,6 +7,7 @@ A scenario is a JSON file that seeds a simulation, feeds it inputs at fixed tick
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `name` | no | Free text shown in reports. |
+| `host` | no | The simulation the scenario runs on: `"arena"` (the default) or `"lighting"`, the fixed room for lighting work described in `docs/screenshots.md`. The lighting host takes no inputs; its only state is the tick. |
 | `seed` | yes | Unsigned 64-bit seed, as an integer or a decimal string for values above 2^53. |
 | `inputs` | no | List of `{ "at": tick, "inputs": [...] }`. Each input is the same object `tickora_step` takes. Ticks strictly increasing. |
 | `run_to` | yes | Final tick, at most 1,000,000. At least the last input tick + 1 and at least the last assertion tick. |
@@ -77,10 +78,10 @@ The host renders one block of audio per tick, offline: 800 stereo samples at 48,
 
 ## Running
 
-- CLI: `tickora-mcp scenario <file>...`, with `--json` for the full report. Exit code 0 when every assertion passed, 1 when one failed, 2 when a file is malformed. With no arguments the binary serves MCP on stdio.
+- CLI: `tickora-mcp scenario <file>...`, with `--json` for the full report. Each file runs on a fresh simulation of its `host`. Exit code 0 when every assertion passed, 1 when one failed, 2 when a file is malformed. With no arguments the binary serves MCP on stdio.
 - Recording goldens: `--record` writes or replaces each screenshot's `<bucket>.png`, and `--record-alternative` adds the next `<bucket>.altN.png`. A recorded screenshot counts as passed and prints `RECORDED <path>`. The two flags cannot be combined, and the MCP tool never records.
 - Listening: `--wav <path>` writes the whole run of one scenario file as a 24-bit stereo WAV and prints `WROTE <path>`. The host replays its input log on a fresh simulation to produce the samples, so a run of any length keeps only per-tick summaries in memory.
 - Hearing: `--listen` prints, after the report, the reading of the whole run of one file (listen.py's summary with ticks beside seconds) and the sound list: every voice start with its take, gain, pitch, distance and per-channel level, every end, and every start dropped at the voice cap. `--sheet <path>` writes the spectrogram PNG: log frequency from 20 Hz to 20 kHz, a short-term loudness strip and a centroid strip, cyan transient marks along the top and a dashed line per sound start. With `--json` the sound list, every measure and the reading go into the report as `hearing`. `--wav`, `--listen` and `--sheet` share one replay pass. A run is heard up to 36,000 ticks.
-- MCP: `tickora_run_scenario` with exactly one of `path` (relative to the server's working directory) or `scenario` (the object inline). It runs on a fresh simulation and leaves the live one untouched. A failed assertion is a normal result with `passed: false`; a malformed scenario is a tool error.
+- MCP: `tickora_run_scenario` with exactly one of `path` (relative to the server's working directory) or `scenario` (the object inline). It runs on a fresh simulation of the scenario's `host` and leaves the live one, always the arena, untouched. A failed assertion is a normal result with `passed: false`; a malformed scenario is a tool error.
 
 Every assertion is evaluated; a run does not stop at the first failure.

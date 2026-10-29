@@ -4,7 +4,8 @@ use std::process::Command as Process;
 
 use serde_json::{Value, json};
 use tickora_mcp::demo::ArenaHost;
-use tickora_mcp::{scenario, shot, tools};
+use tickora_mcp::lighting::LightingHost;
+use tickora_mcp::{Host, scenario, shot, tools};
 
 fn workspace(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("tickora-shots-{name}-{}", std::process::id()));
@@ -168,4 +169,48 @@ fn an_inline_scenario_over_mcp_reports_a_missing_golden_as_a_failed_assertion() 
             .unwrap()
             .contains("no golden for bucket")
     );
+}
+
+#[test]
+fn lighting_captures_report_their_light_counts() {
+    let host = LightingHost::new(0);
+    let shot = shot::from_args(
+        json!({ "viewport": "perspective", "width": 64, "height": 48 })
+            .as_object()
+            .unwrap(),
+    )
+    .unwrap();
+    let details = shot::capture(&host, &shot).unwrap().details.unwrap();
+    assert_eq!(details["point_lights"], 2);
+    assert_eq!(details["spot_lights"], 5);
+    assert_eq!(details["gobo_frames"], 5);
+}
+
+#[test]
+fn the_host_key_runs_an_inline_scenario_on_the_lighting_host() {
+    let mut host = ArenaHost::new(0);
+    let scenario = |host_name: &str| {
+        json!({
+            "name": "tickora_run_scenario",
+            "arguments": { "scenario": {
+                "host": host_name,
+                "seed": 1,
+                "inputs": [{ "at": 0, "inputs": [{ "type": "spawn" }] }],
+                "run_to": 2,
+                "expect": [{ "at": 2, "entities": { "eq": 2 } }],
+            } },
+        })
+    };
+    let reply = tools::call(&mut host, scenario("arena").as_object().unwrap()).unwrap();
+    assert_eq!(reply["structuredContent"]["passed"], true, "{reply}");
+    let reply = tools::call(&mut host, scenario("lighting").as_object().unwrap()).unwrap();
+    assert_eq!(reply["isError"], true, "{reply}");
+    assert!(reply.to_string().contains("takes no inputs"), "{reply}");
+    let bad = json!({
+        "name": "tickora_run_scenario",
+        "arguments": { "scenario": { "host": "cellar", "seed": 1, "run_to": 0, "expect": [{ "at": 0, "entities": { "eq": 0 } }] } },
+    });
+    let reply = tools::call(&mut host, bad.as_object().unwrap()).unwrap();
+    assert_eq!(reply["isError"], true, "{reply}");
+    assert_eq!(host.tick(), 0);
 }

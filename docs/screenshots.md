@@ -27,10 +27,21 @@ Every result carries a camera string, for example `perspective -2500 0 170 0 0 0
 
 One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes Unreal X, so the top view shows what a perspective camera looking straight down with yaw 0 sees. Each entity is a 1 m cube from `assets/gen/render_fixtures/meshes/cube.glb`, coloured by hp. The floor is `floor.glb` scaled to the 25 m spawn square, its top at Z 0, with the `checker.png` texture from `psx_bake`. Two point lights hang 3 m up at X -625 and Y plus or minus 625, intensity 30, attenuation radius 20 m, over an ambient of 0.15. Exposure is 1.0 and the white point 11.2.
 
+## The lighting scene
+
+Scenarios with `"host": "lighting"` run on a fixed room built for lighting work (`docs/design/phase-8-spot-lights.md`), reached through scenarios only; the live MCP simulation stays the arena. The room is 12 by 8 m and 3.5 m high, centred on the origin, with a doorway in the wall at X -600 and three 60 cm crates, all built by `interior_kit` from `specs/lighting/` into `assets/gen/lighting/`. The default camera stands in the doorway at eye height (170 cm) looking along +X. Ambient is 0.05, exposure 1.0 and the white point 11.2. The lights, each testing one thing:
+
+- Two ceiling spots at Z 340 pointing down, fov 60, over X -350 and Y plus or minus 220: spot falloff power 1 at Y 220 and 4 at Y -220.
+- A spot at X 250, Z 175 looking along +X at the far wall, fov 40 and aspect 2, with the static `bars` gobo (a window of 3 by 2 panes).
+- Two ceiling spots over X 300 with the four-frame `flicker` gobo, 6 ticks a frame: Loop at Y 220, Oscillate at Y -220.
+- Two point lights at Z 100 and Y plus or minus 250 with a 3 m radius: falloff power 2 at Y 250 and 1 at Y -250.
+
+The gobos come from `tools/checker_maps` and `specs/lighting/gobos.json`, 64 by 64 pixels.
+
 ## Drawing
 
 - `view_mode`, after Unreal's view modes:
-  - `lit` (default for `perspective`) lights each surface with ambient plus the point lights: Lambert diffuse with Unreal's windowed inverse-square falloff, no specular or shadows.
+  - `lit` (default for `perspective`) lights each surface with ambient plus the point and spot lights, Lambert diffuse with HPL3's distance falloff `pow(max(1 - d / radius, 0), falloff_pow)`, no specular or shadows. A spot is HPL3's frustum: a full vertical fov, an aspect and a near plane. Without a gobo it fades from its axis by `pow(1 - sqrt(t), spot_falloff_pow)`, with `t` the ratio of `1 - cos` of the angle off the axis to `1 - cos(fov / 2)`. With a gobo the point is projected through the frustum and the gobo texel there, nearest and decoded like a colour texture, replaces that fade; outside the frustum's rectangle or behind the light it adds nothing. Gobo frames change by tick in None, Loop or Oscillate mode.
   - `unlit` (default for `top`) shows base colour times texture.
 - Perspective frames follow HPL3's linear pipeline (`docs/design/phase-8-linear-hdr.md`). Texture colour is decoded with `pow(c, 2.2)`, lighting goes into a 16-bit float buffer, and one pass at the end writes the 8-bit frame. In `lit` that pass multiplies by the scene's exposure and applies Hable's curve divided by its value at the scene's white point; `unlit` and `wireframe` skip both, so they show authored colour. Last comes the encode, `pow(c, 1 / gamma)`.
 - `gamma` (perspective only, default 2.2) is the display gamma of that encode, a player's monitor setting rather than level data. Goldens are recorded at 2.2. The top view is never decoded or encoded.
@@ -56,6 +67,7 @@ The result holds an image block (base64 PNG, `image/png`) followed by metadata:
 | `camera` | The camera string for this view. |
 | `view_mode`, `show_grid` | The drawing settings used. |
 | `exposure`, `white_point`, `gamma` | Perspective only: the scene's exposure and white point and the display gamma used. |
+| `point_lights`, `spot_lights`, `gobo_frames` | Perspective only: how many point lights, spot lights and gobo frames the scene holds. |
 | `off_screen` | Entities outside the view: for `perspective`, mesh instances whose bounds lie fully outside the view frustum. |
 | `adapter` | `name`, `backend` and `device_type` of the GPU or software adapter. |
 | `bucket` | `<platform>_<backend>`, for example `windows_dx12`, the golden bucket this frame belongs to. |

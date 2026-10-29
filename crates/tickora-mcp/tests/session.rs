@@ -605,6 +605,10 @@ fn perspective_results_carry_the_tone_settings_and_gamma_changes_the_frame() {
     assert_ne!(default["pixel_hash"], darker["pixel_hash"]);
     assert!(top.get("gamma").is_none());
     assert!(top.get("exposure").is_none());
+    assert_eq!(default["point_lights"], 2);
+    assert_eq!(default["spot_lights"], 0);
+    assert_eq!(default["gobo_frames"], 0);
+    assert!(top.get("spot_lights").is_none());
 }
 
 #[test]

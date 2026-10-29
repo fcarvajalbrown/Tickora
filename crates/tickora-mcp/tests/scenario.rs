@@ -8,7 +8,8 @@ use tickora_core::input::InputLog;
 use tickora_core::sim::Runner;
 use tickora_mcp::Host;
 use tickora_mcp::demo::{Arena, ArenaHost, Command};
-use tickora_mcp::scenario;
+use tickora_mcp::lighting::LightingHost;
+use tickora_mcp::scenario::{self, HostKind};
 use tickora_mcp::tools;
 
 const EXPECTED_TO_FAIL: &str = ".fail.json";
@@ -50,7 +51,11 @@ fn every_scenario_in_the_repo_has_its_expected_outcome() {
     for file in files {
         let name = file.file_name().unwrap().to_str().unwrap();
         let parsed = scenario::load(&file).unwrap();
-        let report = scenario::run(&mut ArenaHost::new(0), &parsed).unwrap();
+        let report = match parsed.host {
+            HostKind::Arena => scenario::run(&mut ArenaHost::new(0), &parsed),
+            HostKind::Lighting => scenario::run(&mut LightingHost::new(0), &parsed),
+        }
+        .unwrap();
         assert_eq!(
             report.passed,
             !name.ends_with(EXPECTED_TO_FAIL),

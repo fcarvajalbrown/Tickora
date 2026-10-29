@@ -7,6 +7,8 @@ use tickora_render::{DEFAULT_SIZE, MAX_SIZE, MIN_SIZE};
 
 use crate::host::Host;
 use crate::jsonrpc::RpcError;
+use crate::lighting::LightingHost;
+use crate::scenario::HostKind;
 use crate::{base64, hearing, scenario, shot};
 
 pub const MAX_STEP_TICKS: u64 = 100_000;
@@ -65,7 +67,7 @@ pub fn definitions<H: Host>(host: &H) -> Value {
         ),
         tool(
             "tickora_run_scenario",
-            "Run a scenario on a fresh simulation, leaving the live one untouched, and report every assertion. Give exactly one of path (a JSON scenario file, relative to the server's working directory) or scenario (the same object inline). A scenario has seed, optional inputs as [{at, inputs}] applied in the step from tick at to at + 1, run_to, and expect: a list of {at} plus one check, which is state_hash or replay_hash (decimal string), entities (count), component with count, query (component names) with count, or entity {index, generation} with field \"component.field\" and value, or audio [from, to] (ticks, to <= at) with one of hash (decimal string), channel \"left\" or \"right\" plus peak_dbfs or rms_dbfs as {min, max}, voices (count), clipped (count), loudness_lufs as {min, max} (integrated, null for a range too quiet or short to gate), onsets (count of transients) or sound (a sound name) with starts (count of its voice starts). Counts and int values take {eq} or {min, max}; bool and text take {eq}; fx takes {raw} (Q32.32 decimal string), {raw_min, raw_max} or {approx, tol}. A failed assertion returns passed false, not a tool error.",
+            "Run a scenario on a fresh simulation, leaving the live one untouched, and report every assertion. Give exactly one of path (a JSON scenario file, relative to the server's working directory) or scenario (the same object inline). A scenario has an optional host, \"arena\" (default) or \"lighting\" (a fixed room with spot lights, gobos and point lights that takes no inputs), seed, optional inputs as [{at, inputs}] applied in the step from tick at to at + 1, run_to, and expect: a list of {at} plus one check, which is state_hash or replay_hash (decimal string), entities (count), component with count, query (component names) with count, or entity {index, generation} with field \"component.field\" and value, or audio [from, to] (ticks, to <= at) with one of hash (decimal string), channel \"left\" or \"right\" plus peak_dbfs or rms_dbfs as {min, max}, voices (count), clipped (count), loudness_lufs as {min, max} (integrated, null for a range too quiet or short to gate), onsets (count of transients) or sound (a sound name) with starts (count of its voice starts). Counts and int values take {eq} or {min, max}; bool and text take {eq}; fx takes {raw} (Q32.32 decimal string), {raw_min, raw_max} or {approx, tol}. A failed assertion returns passed false, not a tool error.",
             json!({
                 "path": { "type": "string" },
                 "scenario": { "type": "object" },
@@ -74,7 +76,7 @@ pub fn definitions<H: Host>(host: &H) -> Value {
         ),
         tool(
             "tickora_screenshot",
-            "Render the live simulation offscreen and return it as a PNG image plus metadata, without stepping it. The camera follows Unreal's viewport model. viewport \"perspective\" is the first-person 3D view in Unreal axes and centimetres (X forward, Y right, Z up): location [x, y, z], rotation [pitch, yaw, roll] in degrees and fov, the horizontal field of view from 5 to 170; any part left out comes from the host's default camera, which for the arena stands at eye height 170 cm. viewport \"top\" is the orthographic debug view (+x right, +y up), with location [x, y] at the image centre and ortho_width in world units across the image. Every result carries a camera string such as \"perspective -2500 0 170 0 0 0 90\" or \"top 0 0 256\"; pass it back as camera to reproduce the view, the way Unreal's BugItGo does. view_mode \"lit\" (perspective default) lights meshes with the scene's point lights, \"unlit\" (top default) shows base colour and texture, \"wireframe\" draws edges. off_screen counts entities, or in perspective mesh instances, fully outside the view. Perspective frames light in linear space, apply the scene exposure and Hable's curve up to its white point in lit, and encode with gamma (default 2.2); exposure, white_point and gamma come back in the result. pixel_hash is a hash of the raw RGBA pixels. With path, the PNG is also written there, relative to the server's working directory.",
+            "Render the live simulation offscreen and return it as a PNG image plus metadata, without stepping it. The camera follows Unreal's viewport model. viewport \"perspective\" is the first-person 3D view in Unreal axes and centimetres (X forward, Y right, Z up): location [x, y, z], rotation [pitch, yaw, roll] in degrees and fov, the horizontal field of view from 5 to 170; any part left out comes from the host's default camera, which for the arena stands at eye height 170 cm. viewport \"top\" is the orthographic debug view (+x right, +y up), with location [x, y] at the image centre and ortho_width in world units across the image. Every result carries a camera string such as \"perspective -2500 0 170 0 0 0 90\" or \"top 0 0 256\"; pass it back as camera to reproduce the view, the way Unreal's BugItGo does. view_mode \"lit\" (perspective default) lights meshes with the scene's point and spot lights, \"unlit\" (top default) shows base colour and texture, \"wireframe\" draws edges. off_screen counts entities, or in perspective mesh instances, fully outside the view. Perspective frames light in linear space, apply the scene exposure and Hable's curve up to its white point in lit, and encode with gamma (default 2.2); exposure, white_point and gamma come back in the result, with point_lights, spot_lights and gobo_frames, the counts in the scene. pixel_hash is a hash of the raw RGBA pixels. With path, the PNG is also written there, relative to the server's working directory.",
             json!({
                 "viewport": { "type": "string", "enum": ["top", "perspective"], "default": "top" },
                 "location": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 3, "description": "[x, y] for top, [x, y, z] in centimetres for perspective." },
@@ -276,8 +278,11 @@ fn run_scenario<H: Host>(host: &H, args: &Args) -> Result<Value, String> {
         (None, Some(inline)) => scenario::from_json(inline),
         _ => Err("give exactly one of \"path\" or \"scenario\"".to_string()),
     }?;
-    let mut fresh = host.fresh(parsed.seed);
-    scenario::run(&mut fresh, &parsed).map(|report| report.to_json())
+    let report = match parsed.host {
+        HostKind::Arena => scenario::run(&mut host.fresh(parsed.seed), &parsed),
+        HostKind::Lighting => scenario::run(&mut LightingHost::new(parsed.seed), &parsed),
+    };
+    report.map(|report| report.to_json())
 }
 
 fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), String> {
@@ -309,8 +314,8 @@ fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), 
         "adapter": capture.adapter,
         "bucket": capture.bucket,
     });
-    if let Some(Value::Object(tone)) = capture.tone {
-        for (key, value) in tone {
+    if let Some(Value::Object(details)) = capture.details {
+        for (key, value) in details {
             structured[key] = value;
         }
     }

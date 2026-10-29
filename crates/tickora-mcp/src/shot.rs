@@ -85,7 +85,7 @@ pub struct Capture {
     pub off_screen: usize,
     pub bucket: String,
     pub adapter: Value,
-    pub tone: Option<Value>,
+    pub details: Option<Value>,
 }
 
 pub fn renderer() -> Result<&'static Renderer, String> {
@@ -98,7 +98,7 @@ pub fn renderer() -> Result<&'static Renderer, String> {
 
 pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
     let renderer = renderer()?;
-    let (image, camera, off_screen, tone) = match &shot.view {
+    let (image, camera, off_screen, details) = match &shot.view {
         View::Top(camera) => {
             let mut scene = host.scene(shot.view_mode);
             if !shot.show_grid {
@@ -118,12 +118,21 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
                 shot.width,
                 shot.height,
             )?;
-            let tone = json!({
+            let frames = scene.gobo_layers()?.frames.len();
+            let details = json!({
                 "exposure": scene.exposure,
                 "white_point": scene.white_point,
                 "gamma": shot.display.gamma,
+                "point_lights": scene.lights.len(),
+                "spot_lights": scene.spots.len(),
+                "gobo_frames": frames,
             });
-            (image, Camera::Perspective(camera), off_screen, Some(tone))
+            (
+                image,
+                Camera::Perspective(camera),
+                off_screen,
+                Some(details),
+            )
         }
     };
     let info = renderer.info();
@@ -137,7 +146,7 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
             "backend": info.backend,
             "device_type": info.device_type,
         }),
-        tone,
+        details,
     })
 }
 

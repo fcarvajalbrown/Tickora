@@ -43,9 +43,36 @@ pub enum Record {
     Alternative,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HostKind {
+    #[default]
+    Arena,
+    Lighting,
+}
+
+impl HostKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            HostKind::Arena => "arena",
+            HostKind::Lighting => "lighting",
+        }
+    }
+
+    fn parse(value: &Value) -> Result<Self, String> {
+        match value.as_str() {
+            Some("arena") => Ok(HostKind::Arena),
+            Some("lighting") => Ok(HostKind::Lighting),
+            _ => Err(format!(
+                "host must be \"arena\" or \"lighting\", found {value}"
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scenario {
     pub name: Option<String>,
+    pub host: HostKind,
     pub seed: u64,
     pub inputs: Vec<Batch>,
     pub run_to: u64,
@@ -189,12 +216,16 @@ pub fn from_json(value: &Value) -> Result<Scenario, String> {
     only(
         root,
         "scenario",
-        &["name", "seed", "inputs", "run_to", "expect"],
+        &["name", "host", "seed", "inputs", "run_to", "expect"],
     )?;
     let name = match root.get("name") {
         None => None,
         Some(Value::String(name)) => Some(name.clone()),
         Some(_) => return Err("name must be a string".to_string()),
+    };
+    let host = match root.get("host") {
+        None => HostKind::default(),
+        Some(value) => HostKind::parse(value)?,
     };
     let seed = seed(need(root, "scenario", "seed")?)?;
     let run_to = unsigned(need(root, "scenario", "run_to")?, "run_to")?;
@@ -236,6 +267,7 @@ pub fn from_json(value: &Value) -> Result<Scenario, String> {
     }
     Ok(Scenario {
         name,
+        host,
         seed,
         inputs,
         run_to,
@@ -1075,6 +1107,33 @@ mod tests {
             error(json!({ "seed": 1, "run_to": 1, "expect": [], "extra": 0 }))
                 .contains("unexpected key \"extra\"")
         );
+    }
+
+    #[test]
+    fn host_defaults_to_the_arena_and_names_only_known_hosts() {
+        let with = |host: Option<Value>| {
+            let mut root =
+                json!({ "seed": 1, "run_to": 1, "expect": [{ "at": 1, "entities": { "eq": 0 } }] });
+            if let Some(host) = host {
+                root["host"] = host;
+            }
+            from_json(&root)
+        };
+        assert_eq!(with(None).unwrap().host, HostKind::Arena);
+        assert_eq!(with(Some(json!("arena"))).unwrap().host, HostKind::Arena);
+        assert_eq!(
+            with(Some(json!("lighting"))).unwrap().host,
+            HostKind::Lighting
+        );
+        for bad in [json!("cellar"), json!(1), json!(null), json!("Lighting")] {
+            assert!(
+                with(Some(bad.clone()))
+                    .unwrap_err()
+                    .contains("host must be"),
+                "{bad}"
+            );
+        }
+        assert_eq!(HostKind::Lighting.name(), "lighting");
     }
 
     #[test]

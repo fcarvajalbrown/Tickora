@@ -7,7 +7,8 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 use tickora_mcp::demo::ArenaHost;
 use tickora_mcp::hearing::{self, Hearing};
-use tickora_mcp::scenario::{self, Record, Report};
+use tickora_mcp::lighting::LightingHost;
+use tickora_mcp::scenario::{self, HostKind, Record, Report, Scenario};
 use tickora_mcp::{Host, Server};
 
 const USAGE: &str = "usage: tickora-mcp [scenario [--json] [--record | --record-alternative] [--wav <path>] [--listen] [--sheet <path>] <file>...]";
@@ -86,10 +87,12 @@ fn scenarios(args: &[String]) -> ExitCode {
     let mut worst = 0;
     let mut reports = Vec::new();
     for file in files {
-        let mut host = ArenaHost::new(0);
-        let outcome = scenario::load(Path::new(file))
-            .and_then(|scenario| scenario::run_recording(&mut host, &scenario, record))
-            .and_then(|report| extras.finish(&host, file).map(|heard| (report, heard)));
+        let outcome = scenario::load(Path::new(file)).and_then(|scenario| match scenario.host {
+            HostKind::Arena => run_file(&mut ArenaHost::new(0), &scenario, record, &extras, file),
+            HostKind::Lighting => {
+                run_file(&mut LightingHost::new(0), &scenario, record, &extras, file)
+            }
+        });
         let code = match &outcome {
             Ok((report, _)) if report.passed => 0,
             Ok(_) => 1,
@@ -134,6 +137,18 @@ fn scenarios(args: &[String]) -> ExitCode {
     ExitCode::from(worst)
 }
 
+fn run_file<H: Host>(
+    host: &mut H,
+    scenario: &Scenario,
+    record: Record,
+    extras: &Extras,
+    file: &str,
+) -> Result<(Report, Option<Hearing>), String> {
+    let report = scenario::run_recording(host, scenario, record)?;
+    let heard = extras.finish(host, file)?;
+    Ok((report, heard))
+}
+
 fn split_value(args: &[String], flag: &str) -> Result<(Option<String>, Vec<String>), String> {
     let mut value = None;
     let mut rest = Vec::new();
@@ -165,7 +180,7 @@ impl Extras {
         self.wav.is_some() || self.sheet.is_some() || self.listen
     }
 
-    fn finish(&self, host: &ArenaHost, file: &str) -> Result<Option<Hearing>, String> {
+    fn finish<H: Host>(&self, host: &H, file: &str) -> Result<Option<Hearing>, String> {
         let mut wav = match &self.wav {
             Some(path) => Some(BufWriter::new(create(path)?)),
             None => None,

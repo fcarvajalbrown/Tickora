@@ -1,0 +1,23 @@
+{
+  "name": "lighting: spot lights, gobos and HPL3 falloff in a closed room",
+  "host": "lighting",
+  "seed": 0,
+  "run_to": 24,
+  "expect": [
+    { "at": 0, "entities": { "eq": 0 } },
+    { "at": 0, "screenshot": "goldens/lighting/overview", "viewport": "perspective", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/overview-unlit", "viewport": "perspective", "view_mode": "unlit", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/overview-wireframe", "viewport": "perspective", "view_mode": "wireframe", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/spot-round", "camera": "perspective -600 220 300 -50 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/spot-tight", "camera": "perspective -600 -220 300 -50 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/gobo-bars", "camera": "perspective -100 0 175 0 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/point-falloff", "camera": "perspective -400 0 200 -15 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/flicker-0", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 6, "screenshot": "goldens/lighting/flicker-6", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 12, "screenshot": "goldens/lighting/flicker-12", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 18, "screenshot": "goldens/lighting/flicker-18", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 24, "screenshot": "goldens/lighting/flicker-24", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 24, "state_hash": "16857094243044004916" },
+    { "at": 24, "replay_hash": "9350999145800770893" }
+  ]
+}

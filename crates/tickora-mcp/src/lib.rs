@@ -3,6 +3,7 @@ pub mod demo;
 pub mod hearing;
 pub mod host;
 pub mod jsonrpc;
+pub mod lighting;
 pub mod scenario;
 pub mod server;
 pub mod shot;
