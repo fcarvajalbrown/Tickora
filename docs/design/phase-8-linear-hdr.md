@@ -67,6 +67,8 @@ All ten perspective shots in `scenarios/arena.json` move: the four lit ones thro
 4. `gh run download <run id>` both artifacts and copy `windows_dx12.png` and `linux_vulkan.png` over the ten perspective folders. No `.altN` files are added. Check that the four top goldens in the artifacts are byte-identical to the committed ones; if any differ, stop and tell Felipe.
 5. Commit the goldens as their own commit with the run ID in the message, push, and confirm CI goes green on both platforms with `low` on every perspective shot. Record the run IDs in the ROADMAP and session notes.
 
+Result: Felipe compared exposures 1.0, 2.0 and 4.0 and kept 1.0. The goldens come from CI run 40890878977 on commit d98aa3d and were committed in 4bba79d. Only the four lit goldens changed. The unlit and wireframe ones came out byte-identical to the phase 6 files, because meshkit's 2.2 decode and the 2.2 encode cancel exactly, and the top goldens were byte-identical as required.
+
 ## Measuring the tolerance table again
 
 The `low` preset (16 per channel, block 0.10, frame 0.02, neighbour search) was justified by the phase 6 measurement. The float buffer, the f32 curve and the `pow` encode can round differently on each adapter, so the table is measured again before 8.2 is done:
@@ -76,6 +78,8 @@ The `low` preset (16 per channel, block 0.10, frame 0.02, neighbour search) was 
 3. `cargo run --release -p tolerance-table -- --shots perspective --sweep 1,2,4,8,16 rtx2050=<dir> warp-local=<dir> warp-ci=<dir> lavapipe-ci=<dir>`, the same command and the same four adapters as in `docs/research/tolerance-presets.md`.
 4. The results go in a new section of `docs/research/tolerance-presets.md`, "Linear space and HDR (phase 8 item 2)", with the CI run ID. The phase 6 tables stay as they are.
 5. The check is the existing criterion: at channel tolerance 16 with the neighbour search, every pair stays within block 0.10 and frame 0.02. If any pair fails, stop and ask Felipe. Presets are not changed without him.
+
+Result: the worst pair at channel tolerance 16 with the neighbour search is 0.00% of the frame and 0.78% of a block, the same as in phase 6, so `low` still passes every pair (`docs/research/tolerance-presets.md`, e076ec7).
 
 ## Tests
 
