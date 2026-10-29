@@ -568,6 +568,46 @@ fn perspective_defaults_to_the_arena_eye_camera_and_its_string_reproduces_the_fr
 }
 
 #[test]
+fn perspective_results_carry_the_tone_settings_and_gamma_changes_the_frame() {
+    let mut script = Script::new(Era::Modern);
+    script.call(
+        "tickora_step",
+        json!({ "ticks": 1, "inputs": [{"type": "spawn"}] }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "width": 96, "height": 64 }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "width": 96, "height": 64, "gamma": 1.8 }),
+    );
+    script.call("tickora_screenshot", json!({ "width": 96, "height": 64 }));
+    let replies = script.run(5);
+    let (default, darker, top) = (
+        structured(&replies[2]),
+        structured(&replies[3]),
+        structured(&replies[4]),
+    );
+    assert_eq!(default["exposure"], 1.0);
+    assert_eq!(
+        default["white_point"].as_f64().map(|v| (v * 10.0).round()),
+        Some(112.0)
+    );
+    assert_eq!(
+        default["gamma"].as_f64().map(|v| (v * 10.0).round()),
+        Some(22.0)
+    );
+    assert_eq!(
+        darker["gamma"].as_f64().map(|v| (v * 10.0).round()),
+        Some(18.0)
+    );
+    assert_ne!(default["pixel_hash"], darker["pixel_hash"]);
+    assert!(top.get("gamma").is_none());
+    assert!(top.get("exposure").is_none());
+}
+
+#[test]
 fn bad_screenshot_arguments_are_tool_errors() {
     let mut script = Script::new(Era::Modern);
     script.call("tickora_screenshot", json!({ "viewport": "front" }));
@@ -577,9 +617,16 @@ fn bad_screenshot_arguments_are_tool_errors() {
         json!({ "camera": "top 0 0 64", "location": [0, 0] }),
     );
     script.call("tickora_screenshot", json!({ "zoom": 2 }));
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "gamma": 0 }),
+    );
+    script.call("tickora_screenshot", json!({ "gamma": 2.2 }));
     let replies = script.run(0);
     assert!(tool_error(&replies[1]).contains("reserved"));
     assert!(tool_error(&replies[2]).contains("width"));
     assert!(tool_error(&replies[3]).contains("not both"));
     assert!(tool_error(&replies[4]).contains("zoom"));
+    assert!(tool_error(&replies[5]).contains("gamma"));
+    assert!(tool_error(&replies[6]).contains("perspective viewport"));
 }

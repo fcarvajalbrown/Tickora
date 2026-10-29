@@ -130,6 +130,9 @@ fn malformed_screenshot_assertions_are_rejected() {
         json!({ "zoom": 2 }),
         json!({ "screenshot": "" }),
         json!({ "camera": "top 0 0 1", "ortho_width": 2 }),
+        json!({ "gamma": 2.2 }),
+        json!({ "viewport": "perspective", "gamma": -1 }),
+        json!({ "viewport": "perspective", "gamma": "2.2" }),
     ] {
         assert!(
             scenario::from_json(&base(extra.clone())).is_err(),
@@ -140,6 +143,8 @@ fn malformed_screenshot_assertions_are_rejected() {
         "tolerance": { "red": 2, "max_local_error": 0.1, "ignore_aa": false }
     })));
     assert!(ok.is_ok(), "{ok:?}");
+    let gamma = scenario::from_json(&base(json!({ "viewport": "perspective", "gamma": 1.8 })));
+    assert!(gamma.is_ok(), "{gamma:?}");
 }
 
 #[test]

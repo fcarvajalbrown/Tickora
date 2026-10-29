@@ -15,6 +15,7 @@ use tickora_core::noise::Location;
 use tickora_core::rng::Rng;
 use tickora_core::sim::{Runner, Sim};
 use tickora_render::camera::DEFAULT_FOV;
+use tickora_render::tone;
 use tickora_render::{
     Color, Grid, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Quad, Rotator, Scene,
     Scene3, ViewMode,
@@ -372,7 +373,8 @@ pub fn default_camera() -> PerspectiveCamera {
 }
 
 pub fn hp_color_linear(hp: i32) -> [f32; 4] {
-    hp_color(hp).map(|channel| f32::from(channel) / 255.0)
+    let [red, green, blue, _] = hp_color(hp).map(|channel| tone::decode_byte(channel) as f32);
+    [red, green, blue, 1.0]
 }
 
 pub fn hp_color(hp: i32) -> Color {

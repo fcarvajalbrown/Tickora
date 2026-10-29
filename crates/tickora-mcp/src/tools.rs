@@ -74,7 +74,7 @@ pub fn definitions<H: Host>(host: &H) -> Value {
         ),
         tool(
             "tickora_screenshot",
-            "Render the live simulation offscreen and return it as a PNG image plus metadata, without stepping it. The camera follows Unreal's viewport model. viewport \"perspective\" is the first-person 3D view in Unreal axes and centimetres (X forward, Y right, Z up): location [x, y, z], rotation [pitch, yaw, roll] in degrees and fov, the horizontal field of view from 5 to 170; any part left out comes from the host's default camera, which for the arena stands at eye height 170 cm. viewport \"top\" is the orthographic debug view (+x right, +y up), with location [x, y] at the image centre and ortho_width in world units across the image. Every result carries a camera string such as \"perspective -2500 0 170 0 0 0 90\" or \"top 0 0 256\"; pass it back as camera to reproduce the view, the way Unreal's BugItGo does. view_mode \"lit\" (perspective default) lights meshes with the scene's point lights, \"unlit\" (top default) shows base colour and texture, \"wireframe\" draws edges. off_screen counts entities, or in perspective mesh instances, fully outside the view. pixel_hash is a hash of the raw RGBA pixels. With path, the PNG is also written there, relative to the server's working directory.",
+            "Render the live simulation offscreen and return it as a PNG image plus metadata, without stepping it. The camera follows Unreal's viewport model. viewport \"perspective\" is the first-person 3D view in Unreal axes and centimetres (X forward, Y right, Z up): location [x, y, z], rotation [pitch, yaw, roll] in degrees and fov, the horizontal field of view from 5 to 170; any part left out comes from the host's default camera, which for the arena stands at eye height 170 cm. viewport \"top\" is the orthographic debug view (+x right, +y up), with location [x, y] at the image centre and ortho_width in world units across the image. Every result carries a camera string such as \"perspective -2500 0 170 0 0 0 90\" or \"top 0 0 256\"; pass it back as camera to reproduce the view, the way Unreal's BugItGo does. view_mode \"lit\" (perspective default) lights meshes with the scene's point lights, \"unlit\" (top default) shows base colour and texture, \"wireframe\" draws edges. off_screen counts entities, or in perspective mesh instances, fully outside the view. Perspective frames light in linear space, apply the scene exposure and Hable's curve up to its white point in lit, and encode with gamma (default 2.2); exposure, white_point and gamma come back in the result. pixel_hash is a hash of the raw RGBA pixels. With path, the PNG is also written there, relative to the server's working directory.",
             json!({
                 "viewport": { "type": "string", "enum": ["top", "perspective"], "default": "top" },
                 "location": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 3, "description": "[x, y] for top, [x, y, z] in centimetres for perspective." },
@@ -86,6 +86,7 @@ pub fn definitions<H: Host>(host: &H) -> Value {
                 "height": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "default": DEFAULT_SIZE },
                 "view_mode": { "type": "string", "enum": ["lit", "unlit", "wireframe"] },
                 "show_grid": { "type": "boolean", "description": "Top only, default true." },
+                "gamma": { "type": "number", "exclusiveMinimum": 0, "default": 2.2, "description": "Display gamma for the final encode, perspective only." },
                 "path": { "type": "string" },
             }),
             &[],
@@ -308,6 +309,11 @@ fn screenshot<H: Host>(host: &H, args: &Args) -> Result<(Value, Option<Value>), 
         "adapter": capture.adapter,
         "bucket": capture.bucket,
     });
+    if let Some(Value::Object(tone)) = capture.tone {
+        for (key, value) in tone {
+            structured[key] = value;
+        }
+    }
     if let Some(path) = path {
         structured["path"] = json!(path);
     }

@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use serde_json::{Map, Value, json};
 use tickora_render::camera::DEFAULT_FOV;
 use tickora_render::math::Vec3;
+use tickora_render::tone;
 use tickora_render::{
     AdapterChoice, Camera, DEFAULT_SIZE, Display, Image, OrthoCamera, PerspectiveCamera, Renderer,
     Rotator, ViewMode, Viewport,
@@ -62,6 +63,7 @@ pub struct Shot {
     pub height: u32,
     pub view_mode: ViewMode,
     pub show_grid: bool,
+    pub display: Display,
 }
 
 impl Default for Shot {
@@ -72,6 +74,7 @@ impl Default for Shot {
             height: DEFAULT_SIZE,
             view_mode: ViewMode::Unlit,
             show_grid: true,
+            display: Display::default(),
         }
     }
 }
@@ -82,6 +85,7 @@ pub struct Capture {
     pub off_screen: usize,
     pub bucket: String,
     pub adapter: Value,
+    pub tone: Option<Value>,
 }
 
 pub fn renderer() -> Result<&'static Renderer, String> {
@@ -94,14 +98,14 @@ pub fn renderer() -> Result<&'static Renderer, String> {
 
 pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
     let renderer = renderer()?;
-    let (image, camera, off_screen) = match &shot.view {
+    let (image, camera, off_screen, tone) = match &shot.view {
         View::Top(camera) => {
             let mut scene = host.scene(shot.view_mode);
             if !shot.show_grid {
                 scene.grid = None;
             }
             let (image, layout) = renderer.render(&scene, camera, shot.width, shot.height)?;
-            (image, Camera::Top(*camera), layout.off_screen)
+            (image, Camera::Top(*camera), layout.off_screen, None)
         }
         view @ View::Perspective { .. } => {
             let scene = host.scene3();
@@ -110,11 +114,16 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
                 &scene,
                 &camera,
                 shot.view_mode,
-                &Display::default(),
+                &shot.display,
                 shot.width,
                 shot.height,
             )?;
-            (image, Camera::Perspective(camera), off_screen)
+            let tone = json!({
+                "exposure": scene.exposure,
+                "white_point": scene.white_point,
+                "gamma": shot.display.gamma,
+            });
+            (image, Camera::Perspective(camera), off_screen, Some(tone))
         }
     };
     let info = renderer.info();
@@ -128,10 +137,11 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
             "backend": info.backend,
             "device_type": info.device_type,
         }),
+        tone,
     })
 }
 
-pub const SHOT_KEYS: [&str; 10] = [
+pub const SHOT_KEYS: [&str; 11] = [
     "viewport",
     "location",
     "rotation",
@@ -142,6 +152,7 @@ pub const SHOT_KEYS: [&str; 10] = [
     "height",
     "view_mode",
     "show_grid",
+    "gamma",
 ];
 
 const CAMERA_PARTS: [&str; 5] = ["viewport", "location", "rotation", "fov", "ortho_width"];
@@ -180,12 +191,25 @@ pub fn from_args(args: &Map<String, Value>) -> Result<Shot, String> {
         (Some(Value::Bool(flag)), _) => *flag,
         (Some(_), _) => return Err("argument \"show_grid\" must be a boolean".to_string()),
     };
+    let display = match (number(args, "gamma")?, viewport) {
+        (None, _) => Display::default(),
+        (Some(_), Viewport::Top) => {
+            return Err("argument \"gamma\" is only for the perspective viewport".to_string());
+        }
+        (Some(gamma), _) => {
+            tone::check_positive("gamma", gamma)?;
+            Display {
+                gamma: gamma as f32,
+            }
+        }
+    };
     Ok(Shot {
         view,
         width: size(args, "width")?,
         height: size(args, "height")?,
         view_mode,
         show_grid,
+        display,
     })
 }
 

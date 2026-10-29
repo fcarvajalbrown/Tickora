@@ -19,19 +19,21 @@ Any of the three left out comes from the host's default camera. The arena's stan
 - `location`: `[x, y]` in world units, the centre of the image. Default `[0, 0]`.
 - `ortho_width`: world units across the image width. Default 256. The height follows the image's aspect ratio.
 
-`rotation` and `fov` are rejected for `top`, and `ortho_width` and `show_grid` for `perspective`.
+`rotation`, `fov` and `gamma` are rejected for `top`, and `ortho_width` and `show_grid` for `perspective`.
 
 Every result carries a camera string, for example `perspective -2500 0 170 0 0 0 90` (BugItGo order, X Y Z Pitch Yaw Roll, then fov) or `top 0 0 256`. Passing it back as `camera` gives the same view again, the way Unreal's BugItGo restores a view saved by BugIt. `camera` cannot be combined with `viewport`, `location`, `rotation`, `fov` or `ortho_width`.
 
 ## The arena in 3D
 
-One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes Unreal X, so the top view shows what a perspective camera looking straight down with yaw 0 sees. Each entity is a 1 m cube from `assets/gen/render_fixtures/meshes/cube.glb`, coloured by hp. The floor is `floor.glb` scaled to the 25 m spawn square, its top at Z 0, with the `checker.png` texture from `psx_bake`. Two point lights hang 3 m up at X -625 and Y plus or minus 625, intensity 30, attenuation radius 20 m, over an ambient of 0.15.
+One arena unit is 25 cm. The arena x axis becomes Unreal Y and arena y becomes Unreal X, so the top view shows what a perspective camera looking straight down with yaw 0 sees. Each entity is a 1 m cube from `assets/gen/render_fixtures/meshes/cube.glb`, coloured by hp. The floor is `floor.glb` scaled to the 25 m spawn square, its top at Z 0, with the `checker.png` texture from `psx_bake`. Two point lights hang 3 m up at X -625 and Y plus or minus 625, intensity 30, attenuation radius 20 m, over an ambient of 0.15. Exposure is 1.0 and the white point 11.2.
 
 ## Drawing
 
 - `view_mode`, after Unreal's view modes:
   - `lit` (default for `perspective`) lights each surface with ambient plus the point lights: Lambert diffuse with Unreal's windowed inverse-square falloff, no specular or shadows.
   - `unlit` (default for `top`) shows base colour times texture.
+- Perspective frames follow HPL3's linear pipeline (`docs/design/phase-8-linear-hdr.md`). Texture colour is decoded with `pow(c, 2.2)`, lighting goes into a 16-bit float buffer, and one pass at the end writes the 8-bit frame. In `lit` that pass multiplies by the scene's exposure and applies Hable's curve divided by its value at the scene's white point; `unlit` and `wireframe` skip both, so they show authored colour. Last comes the encode, `pow(c, 1 / gamma)`.
+- `gamma` (perspective only, default 2.2) is the display gamma of that encode, a player's monitor setting rather than level data. Goldens are recorded at 2.2. The top view is never decoded or encoded.
   - `wireframe` draws edges: triangle edges in `perspective`, a one-pixel outline in `top`.
   - `lit` on `top` is an error.
 - In the top view an entity is a 4-unit square, red at hp 0 and green at hp 100.
@@ -53,6 +55,7 @@ The result holds an image block (base64 PNG, `image/png`) followed by metadata:
 | `pixel_hash` | FNV-1a over the size and the raw RGBA pixels, as a decimal string. It ignores PNG encoding. |
 | `camera` | The camera string for this view. |
 | `view_mode`, `show_grid` | The drawing settings used. |
+| `exposure`, `white_point`, `gamma` | Perspective only: the scene's exposure and white point and the display gamma used. |
 | `off_screen` | Entities outside the view: for `perspective`, mesh instances whose bounds lie fully outside the view frustum. |
 | `adapter` | `name`, `backend` and `device_type` of the GPU or software adapter. |
 | `bucket` | `<platform>_<backend>`, for example `windows_dx12`, the golden bucket this frame belongs to. |
