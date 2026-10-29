@@ -37,6 +37,7 @@ pub const WHITE_POINT: f32 = 11.2;
 pub const LIGHT_HEIGHT_CM: f64 = 300.0;
 pub const LIGHT_INTENSITY: f32 = 30.0;
 pub const LIGHT_RADIUS_CM: f64 = 2000.0;
+pub const LIGHT_FALLOFF_POW: f32 = 1.0;
 pub const SFX_GAIN: Fx = Fx::from_raw(1 << 31);
 pub const SPAWN_SOUND: &str = "spawn";
 pub const HIT_SOUND: &str = "hit";
@@ -220,6 +221,7 @@ impl Arena {
                 color: [1.0, 1.0, 1.0],
                 intensity: LIGHT_INTENSITY,
                 attenuation_radius: LIGHT_RADIUS_CM,
+                falloff_pow: LIGHT_FALLOFF_POW,
             })
             .collect();
         let textures = assets
@@ -235,7 +237,10 @@ impl Arena {
             white_point: WHITE_POINT,
             instances,
             lights,
+            spots: Vec::new(),
             textures,
+            gobos: BTreeMap::new(),
+            tick: 0,
             camera: default_camera(),
         }
     }
@@ -545,7 +550,9 @@ impl Host for ArenaHost {
     }
 
     fn scene3(&self) -> Scene3 {
-        self.runner.sim().scene3()
+        let mut scene = self.runner.sim().scene3();
+        scene.tick = self.runner.tick();
+        scene
     }
 
     fn audio(&self) -> &Capture {

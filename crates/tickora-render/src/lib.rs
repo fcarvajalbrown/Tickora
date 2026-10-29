@@ -13,10 +13,11 @@ pub mod tone;
 pub use camera::{Camera, OrthoCamera, PerspectiveCamera, Rotator, Viewport};
 pub use compare::{Comparison, Tolerance, compare};
 pub use image::Image;
+pub use light::GoboAnim;
 pub use mesh::{Mesh, Primitive};
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
 pub use scene::{Color, Fill, Grid, Layout, PixelRect, Quad, Scene, ViewMode};
-pub use scene3::{MeshInstance, PointLight, Scene3};
+pub use scene3::{GoboRef, MeshInstance, PointLight, Scene3, SpotLight};
 pub use tone::Display;
 
 pub const MIN_SIZE: u32 = 16;

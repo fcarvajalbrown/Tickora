@@ -17,7 +17,7 @@ const LIGHT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const TONE_UNIFORM_SIZE: u64 = 16;
 const VERTEX_SIZE: u64 = 12;
-const FRAME_UNIFORM_SIZE: u64 = 64 + 32 + 32 * scene3::MAX_LIGHTS as u64;
+const FRAME_UNIFORM_SIZE: u64 = 64 + scene3::LIGHT_BYTES_SIZE as u64;
 
 const SHADER: &str = "
 struct Out {
@@ -42,6 +42,15 @@ const CONTENT_GAMMA: f32 = 2.2;
 struct Light {
     position_radius: vec4<f32>,
     color_intensity: vec4<f32>,
+    falloff: vec4<f32>,
+}
+
+struct Spot {
+    view_projection: mat4x4<f32>,
+    position_radius: vec4<f32>,
+    color_intensity: vec4<f32>,
+    forward_cos_half: vec4<f32>,
+    falloff_cone_layer: vec4<f32>,
 }
 
 struct Frame {
@@ -49,9 +58,11 @@ struct Frame {
     ambient: vec4<f32>,
     counts: vec4<u32>,
     lights: array<Light, 16>,
+    spots: array<Spot, 16>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
+@group(0) @binding(1) var gobos: texture_2d_array<f32>;
 @group(1) @binding(0) var albedo: texture_2d<f32>;
 @group(1) @binding(1) var albedo_sampler: sampler;
 
@@ -89,6 +100,39 @@ fn fs_unlit(input: Out) -> @location(0) vec4<f32> {
     return vec4<f32>(input.color.rgb * decoded(input.uv), 1.0);
 }
 
+fn raised(base: f32, power: f32) -> f32 {
+    if base <= 0.0 {
+        return 0.0;
+    }
+    return pow(base, power);
+}
+
+fn distance_falloff(distance: f32, radius: f32, power: f32) -> f32 {
+    return raised(1.0 - distance / radius, power);
+}
+
+fn spot_cone(spot: Spot, from_light: vec3<f32>) -> vec3<f32> {
+    let cos_theta = dot(from_light, spot.forward_cos_half.xyz);
+    let t = saturate((1.0 - cos_theta) / (1.0 - spot.forward_cos_half.w));
+    return vec3<f32>(raised(1.0 - sqrt(t), spot.falloff_cone_layer.y));
+}
+
+fn spot_gobo(spot: Spot, world: vec3<f32>) -> vec3<f32> {
+    let clip = spot.view_projection * vec4<f32>(world, 1.0);
+    if clip.w <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let ndc = clip.xy / clip.w;
+    if abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0 {
+        return vec3<f32>(0.0);
+    }
+    let size = textureDimensions(gobos);
+    let uv = vec2<f32>(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
+    let texel = min(vec2<u32>(uv * vec2<f32>(size)), size - vec2<u32>(1u));
+    let layer = i32(spot.falloff_cone_layer.z);
+    return pow(textureLoad(gobos, texel, layer, 0).rgb, vec3<f32>(CONTENT_GAMMA));
+}
+
 @fragment
 fn fs_lit(input: Out) -> @location(0) vec4<f32> {
     let base = decoded(input.uv);
@@ -98,12 +142,24 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
         let source = frame.lights[index];
         let to_light = source.position_radius.xyz - input.world;
         let distance = length(to_light);
-        let metres = distance / 100.0;
-        let ratio = distance / source.position_radius.w;
-        let window = saturate(1.0 - ratio * ratio * ratio * ratio);
-        let falloff = window * window / (metres * metres + 1.0);
+        let falloff = distance_falloff(distance, source.position_radius.w, source.falloff.x);
         let lambert = max(dot(normal, to_light / max(distance, 0.0001)), 0.0);
         light = light + source.color_intensity.rgb * source.color_intensity.w * lambert * falloff;
+    }
+    for (var index = 0u; index < frame.counts.y; index = index + 1u) {
+        let spot = frame.spots[index];
+        let to_light = spot.position_radius.xyz - input.world;
+        let distance = length(to_light);
+        let direction = to_light / max(distance, 0.0001);
+        let falloff = distance_falloff(distance, spot.position_radius.w, spot.falloff_cone_layer.x);
+        let lambert = max(dot(normal, direction), 0.0);
+        var shape: vec3<f32>;
+        if spot.falloff_cone_layer.z < 0.0 {
+            shape = spot_cone(spot, -direction);
+        } else {
+            shape = spot_gobo(spot, input.world);
+        }
+        light = light + spot.color_intensity.rgb * spot.color_intensity.w * lambert * falloff * shape;
     }
     return vec4<f32>(input.color.rgb * base * light, 1.0);
 }
@@ -317,6 +373,7 @@ impl Renderer {
             .flat_map(|value| value.to_le_bytes())
             .collect();
         uniforms.extend(scene.light_bytes()?);
+        let gobo_view = self.gobo_view(&scene.gobo_layers()?);
         let frame_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -327,10 +384,16 @@ impl Renderer {
         let frame_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("tickora frame uniforms"),
             layout: &self.mesh.frame_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: frame_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: frame_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&gobo_view),
+                },
+            ],
         });
         let draws: Vec<(&Batch, wgpu::Buffer, wgpu::BindGroup)> = batches
             .iter()
@@ -467,6 +530,41 @@ impl Renderer {
         self.one_frame_at_a_time
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn gobo_view(&self, layers: &scene3::GoboLayers<'_>) -> wgpu::TextureView {
+        let frames = if layers.frames.is_empty() {
+            vec![&self.mesh.white]
+        } else {
+            layers.frames.clone()
+        };
+        let pixels: Vec<u8> = frames
+            .iter()
+            .flat_map(|image| image.pixels.iter().copied())
+            .collect();
+        let texture = self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("tickora gobos"),
+                size: wgpu::Extent3d {
+                    width: frames[0].width,
+                    height: frames[0].height,
+                    depth_or_array_layers: frames.len() as u32,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &pixels,
+        );
+        texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
     }
 
     fn texture_group(&self, image: &Image) -> wgpu::BindGroup {
@@ -764,16 +862,28 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
     });
     let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("tickora frame uniforms"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_SIZE),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_SIZE),
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
     });
     let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("tickora albedo"),
