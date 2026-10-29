@@ -22,8 +22,14 @@ Status: **Done** (0.1.0 to 0.7.0). Full text in the history.
 Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PRD section 4).
 
 1. Done. Study Amnesia: The Bunker's look; findings in `docs/research/bunker-look.md` before the rest of the list is fixed.
-2. Not Started. Shadows from the point lights and specular highlights.
-3. Not Started. Normal maps, mipmaps and filtered texture sampling.
+2. Not Started. Linear space and HDR: sRGB decode of colour textures, 16-bit float light buffer, Hable's filmic curve with a white point, manual exposure, one gamma encode at the end.
+3. Not Started. Spot lights, with gobo textures.
+4. Not Started. Shadows from point and spot lights, and specular highlights.
+5. Not Started. Normal maps, mipmaps, filtered and anisotropic sampling.
+6. Not Started. Distance and height fog, with fog volumes.
+7. Not Started. SSAO; its design settles how screenshots stay deterministic.
+8. Not Started. Bloom and film grain seeded per tick.
+9. Not Started. Sky and ground ambient, then irradiance probes.
 
 ## Phase 9: coal-mine demo, 0.9.0
 
@@ -53,5 +59,6 @@ Status: **Not Started**. PRD sections 9 and 12.
 - A window a human plays the game in.
 - After v1: a scripting layer and a node editor for teammates who don't use agents, with graphs stored as text an agent can edit too (`docs/research/scripting-language.md`).
 - Physics and 3D collision (ADR 0003).
-- Anti-aliasing, after the coal-mine demo (Felipe); the tolerance table is measured again when it lands.
+- Anti-aliasing, after the coal-mine demo (Felipe), FXAA included; the tolerance table is measured again when it lands.
+- Parallax mapping, decals and colour grading (`docs/research/bunker-look.md`).
 - `front` and `side` viewports, reserved.
