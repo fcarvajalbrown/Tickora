@@ -1,6 +1,6 @@
 # Phase 8 design, item 3: spot lights with gobo textures
 
-Status: draft, waiting for Felipe's approval.
+Status: approved by Felipe.
 
 Today `Scene3` has point lights only, up to 16, dimmed with Unreal's Karis falloff. This item adds HPL3's spot light: a frustum with a field of view, an aspect and a near plane, an angular falloff with a power, and a gobo texture projected through the frustum, animated by ticks. It also moves point lights to HPL3's distance falloff, so both light types dim the same way before 8.4 adds shadows to both.
 
