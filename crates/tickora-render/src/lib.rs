@@ -17,7 +17,7 @@ pub use light::{GoboAnim, ShadowQuality, ShadowResolution};
 pub use mesh::{Mesh, Primitive};
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
 pub use scene::{Color, Fill, Grid, Layout, PixelRect, Quad, Scene, ViewMode};
-pub use scene3::{GoboRef, MeshInstance, PointLight, Scene3, SpotLight};
+pub use scene3::{GoboRef, Material, MeshInstance, PointLight, Scene3, SpotLight};
 pub use tone::Display;
 
 pub const MIN_SIZE: u32 = 16;

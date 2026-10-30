@@ -209,6 +209,7 @@ pub fn from_args(args: &Map<String, Value>) -> Result<Shot, String> {
             tone::check_positive("gamma", gamma)?;
             Display {
                 gamma: gamma as f32,
+                ..Display::default()
             }
         }
     };

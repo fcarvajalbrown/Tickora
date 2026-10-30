@@ -1,3 +1,5 @@
+use crate::light::ShadowQuality;
+
 pub const CONTENT_GAMMA: f64 = 2.2;
 pub const DEFAULT_GAMMA: f64 = 2.2;
 pub const DEFAULT_EXPOSURE: f64 = 1.0;
@@ -6,12 +8,14 @@ pub const DEFAULT_WHITE_POINT: f64 = 11.2;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Display {
     pub gamma: f32,
+    pub shadow_quality: ShadowQuality,
 }
 
 impl Default for Display {
     fn default() -> Self {
         Display {
             gamma: DEFAULT_GAMMA as f32,
+            shadow_quality: ShadowQuality::default(),
         }
     }
 }

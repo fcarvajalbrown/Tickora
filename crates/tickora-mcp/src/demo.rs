@@ -222,6 +222,8 @@ impl Arena {
                 intensity: LIGHT_INTENSITY,
                 attenuation_radius: LIGHT_RADIUS_CM,
                 falloff_pow: LIGHT_FALLOFF_POW,
+                specular_color: None,
+                cast_specular: true,
             })
             .collect();
         let textures = assets
@@ -240,6 +242,7 @@ impl Arena {
             spots: Vec::new(),
             textures,
             gobos: BTreeMap::new(),
+            materials: BTreeMap::new(),
             tick: 0,
             camera: default_camera(),
         }

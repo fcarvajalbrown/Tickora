@@ -207,6 +207,7 @@ pub fn scene3(tick: u64) -> Scene3 {
         spots: spots(),
         textures: BTreeMap::new(),
         gobos: assets.gobos.clone(),
+        materials: BTreeMap::new(),
         tick,
         camera: default_camera(),
     }
@@ -254,6 +255,8 @@ pub fn point_lights() -> Vec<PointLight> {
             intensity: LIGHT_INTENSITY,
             attenuation_radius: POINT_LIGHT_RADIUS_CM,
             falloff_pow,
+            specular_color: None,
+            cast_specular: true,
         })
         .collect()
 }
@@ -346,6 +349,7 @@ pub fn layout_rows(csv: &str) -> Vec<LayoutRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tickora_render::ShadowQuality;
 
     #[test]
     fn layout_rows_read_the_room_and_three_crates_in_centimetres() {
@@ -377,7 +381,11 @@ mod tests {
         assert_eq!(scene.spots.len(), 5);
         assert_eq!(scene.lights.len(), 2);
         assert_eq!(scene.gobo_layers().unwrap().frames.len(), 5);
-        assert!(scene.light_bytes().is_ok());
+        assert!(
+            scene
+                .light_bytes(&scene.camera, ShadowQuality::default())
+                .is_ok()
+        );
         assert_eq!(scene.instances.len(), 4);
     }
 

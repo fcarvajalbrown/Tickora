@@ -52,6 +52,7 @@ fn near_and_far(near_first: bool) -> Scene3 {
         spots: Vec::new(),
         textures: BTreeMap::new(),
         gobos: BTreeMap::new(),
+        materials: BTreeMap::new(),
         tick: 0,
         camera: eye(),
     }
@@ -149,6 +150,7 @@ fn plus_y_is_screen_right_and_plus_z_is_screen_up() {
         spots: Vec::new(),
         textures: BTreeMap::new(),
         gobos: BTreeMap::new(),
+        materials: BTreeMap::new(),
         tick: 0,
         camera: eye(),
     };
@@ -177,6 +179,7 @@ fn psx_bake_texture_shows_its_texels_unlit() {
         spots: Vec::new(),
         textures: BTreeMap::from([("stone".to_string(), Arc::new(checker))]),
         gobos: BTreeMap::new(),
+        materials: BTreeMap::new(),
         tick: 0,
         camera: eye(),
     };
@@ -200,6 +203,7 @@ fn lit_cube(lights: Vec<PointLight>) -> Scene3 {
         spots: Vec::new(),
         textures: BTreeMap::new(),
         gobos: BTreeMap::new(),
+        materials: BTreeMap::new(),
         tick: 0,
         camera: eye(),
     }
@@ -212,6 +216,8 @@ fn lamp(x: f64) -> PointLight {
         intensity: 1.0,
         attenuation_radius: 1000.0,
         falloff_pow: 1.0,
+        specular_color: None,
+        cast_specular: true,
     }
 }
 
@@ -260,7 +266,10 @@ fn light_past_the_white_point_saturates() {
 
 #[test]
 fn gamma_changes_unlit_pixels_as_predicted() {
-    let display = Display { gamma: 1.8 };
+    let display = Display {
+        gamma: 1.8,
+        ..Display::default()
+    };
     let scene = near_and_far(true);
     let (image, _) = renderer()
         .render3(
@@ -319,7 +328,10 @@ fn tone_settings_must_be_finite_and_positive() {
                     &scene,
                     &scene.camera,
                     ViewMode::Lit,
-                    &Display { gamma: bad },
+                    &Display {
+                        gamma: bad,
+                        ..Display::default()
+                    },
                     WIDTH,
                     HEIGHT
                 )
@@ -386,6 +398,7 @@ fn wall(spots: Vec<SpotLight>, lights: Vec<PointLight>) -> Scene3 {
         spots,
         textures: BTreeMap::new(),
         gobos: BTreeMap::new(),
+        materials: BTreeMap::new(),
         tick: 0,
         camera: eye(),
     }
@@ -563,6 +576,8 @@ fn point_light_follows_the_hpl3_falloff() {
             intensity: 2.0,
             attenuation_radius: 1000.0,
             falloff_pow: power,
+            specular_color: None,
+            cast_specular: true,
         };
         let image = render_lit(&wall(Vec::new(), vec![lamp]));
         for ndc_x in [0.0, 0.4] {
