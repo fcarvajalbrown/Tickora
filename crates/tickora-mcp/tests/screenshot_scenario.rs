@@ -134,6 +134,9 @@ fn malformed_screenshot_assertions_are_rejected() {
         json!({ "gamma": 2.2 }),
         json!({ "viewport": "perspective", "gamma": -1 }),
         json!({ "viewport": "perspective", "gamma": "2.2" }),
+        json!({ "shadow_quality": "low" }),
+        json!({ "viewport": "perspective", "shadow_quality": "ultra" }),
+        json!({ "viewport": "perspective", "shadow_quality": 1 }),
     ] {
         assert!(
             scenario::from_json(&base(extra.clone())).is_err(),
@@ -146,6 +149,12 @@ fn malformed_screenshot_assertions_are_rejected() {
     assert!(ok.is_ok(), "{ok:?}");
     let gamma = scenario::from_json(&base(json!({ "viewport": "perspective", "gamma": 1.8 })));
     assert!(gamma.is_ok(), "{gamma:?}");
+    for quality in ["low", "medium", "high"] {
+        let parsed = scenario::from_json(&base(
+            json!({ "viewport": "perspective", "shadow_quality": quality }),
+        ));
+        assert!(parsed.is_ok(), "{quality}: {parsed:?}");
+    }
 }
 
 #[test]
@@ -181,9 +190,11 @@ fn lighting_captures_report_their_light_counts() {
     )
     .unwrap();
     let details = shot::capture(&host, &shot).unwrap().details.unwrap();
-    assert_eq!(details["point_lights"], 2);
-    assert_eq!(details["spot_lights"], 5);
+    assert_eq!(details["point_lights"], 3);
+    assert_eq!(details["spot_lights"], 9);
     assert_eq!(details["gobo_frames"], 5);
+    assert_eq!(details["shadow_spots"], 3);
+    assert_eq!(details["shadow_quality"], "medium");
 }
 
 #[test]

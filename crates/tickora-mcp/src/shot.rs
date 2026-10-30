@@ -6,7 +6,7 @@ use tickora_render::math::Vec3;
 use tickora_render::tone;
 use tickora_render::{
     AdapterChoice, Camera, DEFAULT_SIZE, Display, Image, OrthoCamera, PerspectiveCamera, Renderer,
-    Rotator, ViewMode, Viewport,
+    Rotator, ShadowQuality, ViewMode, Viewport,
 };
 
 use crate::host::Host;
@@ -126,6 +126,8 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
                 "point_lights": scene.lights.len(),
                 "spot_lights": scene.spots.len(),
                 "gobo_frames": frames,
+                "shadow_quality": shot.display.shadow_quality.name(),
+                "shadow_spots": scene.shadow_layers()?.count,
             });
             (
                 image,
@@ -150,7 +152,7 @@ pub fn capture<H: Host>(host: &H, shot: &Shot) -> Result<Capture, String> {
     })
 }
 
-pub const SHOT_KEYS: [&str; 11] = [
+pub const SHOT_KEYS: [&str; 12] = [
     "viewport",
     "location",
     "rotation",
@@ -162,6 +164,7 @@ pub const SHOT_KEYS: [&str; 11] = [
     "view_mode",
     "show_grid",
     "gamma",
+    "shadow_quality",
 ];
 
 const CAMERA_PARTS: [&str; 5] = ["viewport", "location", "rotation", "fov", "ortho_width"];
@@ -200,7 +203,7 @@ pub fn from_args(args: &Map<String, Value>) -> Result<Shot, String> {
         (Some(Value::Bool(flag)), _) => *flag,
         (Some(_), _) => return Err("argument \"show_grid\" must be a boolean".to_string()),
     };
-    let display = match (number(args, "gamma")?, viewport) {
+    let mut display = match (number(args, "gamma")?, viewport) {
         (None, _) => Display::default(),
         (Some(_), Viewport::Top) => {
             return Err("argument \"gamma\" is only for the perspective viewport".to_string());
@@ -213,6 +216,19 @@ pub fn from_args(args: &Map<String, Value>) -> Result<Shot, String> {
             }
         }
     };
+    match (text(args, "shadow_quality")?, viewport) {
+        (None, _) => {}
+        (Some(_), Viewport::Top) => {
+            return Err(
+                "argument \"shadow_quality\" is only for the perspective viewport".to_string(),
+            );
+        }
+        (Some(name), _) => {
+            display.shadow_quality = ShadowQuality::parse(name).ok_or_else(|| {
+                format!("shadow_quality {name:?}; expected \"low\", \"medium\" or \"high\"")
+            })?;
+        }
+    }
     Ok(Shot {
         view,
         width: size(args, "width")?,

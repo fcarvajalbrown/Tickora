@@ -13,8 +13,8 @@ use tickora_core::rng::Rng;
 use tickora_core::sim::{Runner, Sim};
 use tickora_render::camera::DEFAULT_FOV;
 use tickora_render::{
-    GoboAnim, GoboRef, Image, Mesh, MeshInstance, PerspectiveCamera, PointLight, Rotator, Scene,
-    Scene3, SpotLight, ViewMode,
+    GoboAnim, GoboRef, Image, Material, Mesh, MeshInstance, PerspectiveCamera, PointLight, Rotator,
+    Scene, Scene3, ShadowResolution, SpotLight, ViewMode,
 };
 
 use crate::demo::{BACKGROUND, EXPOSURE, EYE_HEIGHT_CM, WHITE_POINT};
@@ -37,6 +37,21 @@ pub const POINT_LIGHT_Y_CM: f64 = 250.0;
 pub const POINT_LIGHT_Z_CM: f64 = 100.0;
 pub const POINT_LIGHT_RADIUS_CM: f64 = 300.0;
 pub const DOORWAY_X_CM: f64 = -600.0;
+pub const SHADOW_SPOT_Z_CM: f64 = 340.0;
+pub const SHADOW_SPOT_X_CM: f64 = -2300.0;
+pub const SHADOW_SPOT_Y_CM: f64 = 150.0;
+pub const GOBO_SHADOW_SPOT: [f64; 3] = [-1800.0, -250.0, 50.0];
+pub const GLOSS_POINT_LIGHT: [f64; 3] = [-1725.0, 380.0, 150.0];
+pub const GLOSS_SPOT: [f64; 3] = [-1725.0, 250.0, 300.0];
+pub const SECOND_ROOM_RADIUS_CM: f64 = 600.0;
+pub const GLOSS_DULL: Material = Material {
+    specular: [0.3, 0.3, 0.3],
+    specular_power: 0.3,
+};
+pub const GLOSS_SHARP: Material = Material {
+    specular: [0.6, 0.6, 0.6],
+    specular_power: 0.7,
+};
 
 const ROOM_GLB: &[u8] = include_bytes!("../../../assets/gen/lighting/meshes/room.glb");
 const CRATE_GLB: &[u8] = include_bytes!("../../../assets/gen/lighting/meshes/crate.glb");
@@ -211,7 +226,7 @@ pub fn scene3(tick: u64) -> Scene3 {
         spots: spots(),
         textures: BTreeMap::new(),
         gobos: assets.gobos.clone(),
-        materials: BTreeMap::new(),
+        materials: materials(),
         tick,
         camera: default_camera(),
     }
@@ -247,22 +262,67 @@ pub fn spots() -> Vec<SpotLight> {
     looping.gobo = Some(flicker(GoboAnim::Loop));
     let mut oscillating = ceiling_spot(FLICKER_POOL_X_CM, -POOL_Y_CM);
     oscillating.gobo = Some(flicker(GoboAnim::Oscillate));
-    vec![round, tight, bars, looping, oscillating]
+    let mut spots = vec![round, tight, bars, looping, oscillating];
+    spots.extend(second_room_spots());
+    spots
+}
+
+fn down_spot(location: [f64; 3]) -> SpotLight {
+    let mut spot = SpotLight::new(location, Rotator::new(-90.0, 0.0, 0.0));
+    spot.intensity = LIGHT_INTENSITY;
+    spot.attenuation_radius = SECOND_ROOM_RADIUS_CM;
+    spot
+}
+
+pub fn second_room_spots() -> Vec<SpotLight> {
+    let mut high = down_spot([SHADOW_SPOT_X_CM, -SHADOW_SPOT_Y_CM, SHADOW_SPOT_Z_CM]);
+    high.cast_shadows = true;
+    let mut low = down_spot([SHADOW_SPOT_X_CM, SHADOW_SPOT_Y_CM, SHADOW_SPOT_Z_CM]);
+    low.cast_shadows = true;
+    low.shadow_resolution = ShadowResolution::Low;
+    let mut bars = SpotLight::new(GOBO_SHADOW_SPOT, Rotator::default());
+    bars.intensity = LIGHT_INTENSITY;
+    bars.attenuation_radius = SECOND_ROOM_RADIUS_CM;
+    bars.fov = BARS_SPOT_FOV;
+    bars.aspect = BARS_SPOT_ASPECT;
+    bars.gobo = Some(GoboRef::still("bars"));
+    bars.cast_shadows = true;
+    let gloss = down_spot(GLOSS_SPOT);
+    vec![high, low, bars, gloss]
+}
+
+pub fn materials() -> BTreeMap<String, Material> {
+    BTreeMap::from([
+        ("gloss_dull".to_string(), GLOSS_DULL),
+        ("gloss_sharp".to_string(), GLOSS_SHARP),
+    ])
 }
 
 pub fn point_lights() -> Vec<PointLight> {
-    [(POINT_LIGHT_Y_CM, 2.0), (-POINT_LIGHT_Y_CM, 1.0)]
-        .into_iter()
-        .map(|(y, falloff_pow)| PointLight {
-            location: [0.0, y, POINT_LIGHT_Z_CM],
-            color: [1.0, 1.0, 1.0],
-            intensity: LIGHT_INTENSITY,
-            attenuation_radius: POINT_LIGHT_RADIUS_CM,
-            falloff_pow,
-            specular_color: None,
-            cast_specular: true,
-        })
-        .collect()
+    [
+        (
+            [0.0, POINT_LIGHT_Y_CM, POINT_LIGHT_Z_CM],
+            POINT_LIGHT_RADIUS_CM,
+            2.0,
+        ),
+        (
+            [0.0, -POINT_LIGHT_Y_CM, POINT_LIGHT_Z_CM],
+            POINT_LIGHT_RADIUS_CM,
+            1.0,
+        ),
+        (GLOSS_POINT_LIGHT, SECOND_ROOM_RADIUS_CM, 1.0),
+    ]
+    .into_iter()
+    .map(|(location, attenuation_radius, falloff_pow)| PointLight {
+        location,
+        color: [1.0, 1.0, 1.0],
+        intensity: LIGHT_INTENSITY,
+        attenuation_radius,
+        falloff_pow,
+        specular_color: None,
+        cast_specular: true,
+    })
+    .collect()
 }
 
 struct Assets {
@@ -404,10 +464,12 @@ mod tests {
     }
 
     #[test]
-    fn the_scene_holds_five_spots_two_points_and_five_gobo_frames() {
+    fn the_scene_holds_nine_spots_three_points_and_five_gobo_frames() {
         let scene = scene3(0);
-        assert_eq!(scene.spots.len(), 5);
-        assert_eq!(scene.lights.len(), 2);
+        assert_eq!(scene.spots.len(), 9);
+        assert_eq!(scene.lights.len(), 3);
+        assert_eq!(scene.shadow_layers().unwrap().count, 3);
+        assert_eq!(scene.materials, materials());
         assert_eq!(scene.gobo_layers().unwrap().frames.len(), 5);
         assert!(
             scene

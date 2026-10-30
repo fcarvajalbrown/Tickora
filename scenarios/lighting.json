@@ -1,5 +1,5 @@
 {
-  "name": "lighting: spot lights, gobos and HPL3 falloff in a closed room",
+  "name": "lighting: spot lights, gobos and HPL3 falloff in one room; spot shadows and specular in a second",
   "host": "lighting",
   "seed": 0,
   "run_to": 24,
@@ -17,6 +17,16 @@
     { "at": 12, "screenshot": "goldens/lighting/flicker-12", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
     { "at": 18, "screenshot": "goldens/lighting/flicker-18", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
     { "at": 24, "screenshot": "goldens/lighting/flicker-24", "camera": "perspective 0 0 330 -48 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/second-overview", "camera": "perspective -2590 0 170 0 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/second-overview-unlit", "camera": "perspective -2590 0 170 0 0 0 90", "view_mode": "unlit", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/second-overview-wireframe", "camera": "perspective -2590 0 170 0 0 0 90", "view_mode": "wireframe", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/shadow-floor", "camera": "perspective -2450 -150 220 -35 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/shadow-floor-low", "camera": "perspective -2450 -150 220 -35 0 0 90", "shadow_quality": "low", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/shadow-floor-high", "camera": "perspective -2450 -150 220 -35 0 0 90", "shadow_quality": "high", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/shadow-gobo", "camera": "perspective -1950 -250 150 0 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/shadow-maps", "camera": "perspective -2500 0 320 -45 0 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/specular-point", "camera": "perspective -1725 60 200 -36 90 0 90", "tolerance": "low" },
+    { "at": 0, "screenshot": "goldens/lighting/specular-spot", "camera": "perspective -1725 50 260 -40 90 0 90", "tolerance": "low" },
     { "at": 24, "state_hash": "16857094243044004916" },
     { "at": 24, "replay_hash": "9350999145800770893" }
   ]

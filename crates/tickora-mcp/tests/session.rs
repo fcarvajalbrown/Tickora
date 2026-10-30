@@ -608,7 +608,26 @@ fn perspective_results_carry_the_tone_settings_and_gamma_changes_the_frame() {
     assert_eq!(default["point_lights"], 2);
     assert_eq!(default["spot_lights"], 0);
     assert_eq!(default["gobo_frames"], 0);
+    assert_eq!(default["shadow_quality"], "medium");
+    assert_eq!(default["shadow_spots"], 0);
     assert!(top.get("spot_lights").is_none());
+    assert!(top.get("shadow_quality").is_none());
+}
+
+#[test]
+fn shadow_quality_comes_back_in_the_result() {
+    let mut script = Script::new(Era::Modern);
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "width": 64, "height": 32, "shadow_quality": "high" }),
+    );
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "width": 64, "height": 32, "shadow_quality": "low" }),
+    );
+    let replies = script.run(0);
+    assert_eq!(structured(&replies[1])["shadow_quality"], "high");
+    assert_eq!(structured(&replies[2])["shadow_quality"], "low");
 }
 
 #[test]
@@ -626,6 +645,11 @@ fn bad_screenshot_arguments_are_tool_errors() {
         json!({ "viewport": "perspective", "gamma": 0 }),
     );
     script.call("tickora_screenshot", json!({ "gamma": 2.2 }));
+    script.call(
+        "tickora_screenshot",
+        json!({ "viewport": "perspective", "shadow_quality": "ultra" }),
+    );
+    script.call("tickora_screenshot", json!({ "shadow_quality": "low" }));
     let replies = script.run(0);
     assert!(tool_error(&replies[1]).contains("reserved"));
     assert!(tool_error(&replies[2]).contains("width"));
@@ -633,4 +657,6 @@ fn bad_screenshot_arguments_are_tool_errors() {
     assert!(tool_error(&replies[4]).contains("zoom"));
     assert!(tool_error(&replies[5]).contains("gamma"));
     assert!(tool_error(&replies[6]).contains("perspective viewport"));
+    assert!(tool_error(&replies[7]).contains("shadow_quality"));
+    assert!(tool_error(&replies[8]).contains("perspective viewport"));
 }

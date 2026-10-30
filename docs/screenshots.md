@@ -19,7 +19,7 @@ Any of the three left out comes from the host's default camera. The arena's stan
 - `location`: `[x, y]` in world units, the centre of the image. Default `[0, 0]`.
 - `ortho_width`: world units across the image width. Default 256. The height follows the image's aspect ratio.
 
-`rotation`, `fov` and `gamma` are rejected for `top`, and `ortho_width` and `show_grid` for `perspective`.
+`rotation`, `fov`, `gamma` and `shadow_quality` are rejected for `top`, and `ortho_width` and `show_grid` for `perspective`.
 
 Every result carries a camera string, for example `perspective -2500 0 170 0 0 0 90` (BugItGo order, X Y Z Pitch Yaw Roll, then fov) or `top 0 0 256`. Passing it back as `camera` gives the same view again, the way Unreal's BugItGo restores a view saved by BugIt. `camera` cannot be combined with `viewport`, `location`, `rotation`, `fov` or `ortho_width`.
 
@@ -38,13 +38,20 @@ Scenarios with `"host": "lighting"` run on a fixed room built for lighting work 
 
 Every light has intensity 4, chosen by Felipe from frames at 2, 4 and 8. The gobos come from `tools/checker_maps` and `specs/lighting/gobos.json`, 64 by 64 pixels; the `cage` gobo is generated but no light uses it yet (Felipe: kept for later).
 
+A second room for shadows and specular (`docs/design/phase-8-shadows-specular.md`), the same room 20 m along -X (centred on X -2000, behind the first room's doorway camera, so no first-room shot sees it, not even in wireframe), holds three plain crates and two gloss crates, `crate_gloss_dull` and `crate_gloss_sharp`, whose materials `gloss_dull` and `gloss_sharp` are the only ones with specular. Its lights reach 6 m and none touches the first room:
+
+- Two shadow-casting spots at Z 340 pointing down, fov 60, over X -2300: High resolution at Y -150 and Low at Y 150, each beside a crate.
+- A shadow-casting spot at X -1800, Y -250, Z 50 looking along +X, fov 40 and aspect 2, with the `bars` gobo, throwing a crate's shadow onto the far wall.
+- A point light at X -1725, Y 380, Z 150 and a spot at X -1725, Y 250, Z 300 pointing down, over the gloss crates.
+
 ## Drawing
 
 - `view_mode`, after Unreal's view modes:
-  - `lit` (default for `perspective`) lights each surface with ambient plus the point and spot lights, Lambert diffuse with HPL3's distance falloff `pow(max(1 - d / radius, 0), falloff_pow)`, no specular or shadows. A spot is HPL3's frustum: a full vertical fov, an aspect and a near plane. Without a gobo it fades from its axis by `pow(1 - sqrt(t), spot_falloff_pow)`, with `t` the ratio of `1 - cos` of the angle off the axis to `1 - cos(fov / 2)`. With a gobo the point is projected through the frustum and the gobo texel there, nearest and decoded like a colour texture, replaces that fade; outside the frustum's rectangle or behind the light it adds nothing. Gobo frames change by tick in None, Loop or Oscillate mode.
+  - `lit` (default for `perspective`) lights each surface with ambient plus the point and spot lights, Lambert diffuse with HPL3's distance falloff `pow(max(1 - d / radius, 0), falloff_pow)`, plus HPL2's Blinn-Phong specular on materials that have one (`specular * pow(saturate(dot(n, h)), 2^(10 * specular_power) + 1)`, not tinted by the surface colour) and shadows from spot lights with `cast_shadows` (`docs/design/phase-8-shadows-specular.md`). Point lights cast no shadows, as in HPL3. A spot is HPL3's frustum: a full vertical fov, an aspect and a near plane. Without a gobo it fades from its axis by `pow(1 - sqrt(t), spot_falloff_pow)`, with `t` the ratio of `1 - cos` of the angle off the axis to `1 - cos(fov / 2)`. With a gobo the point is projected through the frustum and the gobo texel there, nearest and decoded like a colour texture, replaces that fade; outside the frustum's rectangle or behind the light it adds nothing. Gobo frames change by tick in None, Loop or Oscillate mode.
   - `unlit` (default for `top`) shows base colour times texture.
 - Perspective frames follow HPL3's linear pipeline (`docs/design/phase-8-linear-hdr.md`). Texture colour is decoded with `pow(c, 2.2)`, lighting goes into a 16-bit float buffer, and one pass at the end writes the 8-bit frame. In `lit` that pass multiplies by the scene's exposure and applies Hable's curve divided by its value at the scene's white point; `unlit` and `wireframe` skip both, so they show authored colour. Last comes the encode, `pow(c, 1 / gamma)`.
 - `gamma` (perspective only, default 2.2) is the display gamma of that encode, a player's monitor setting rather than level data. Goldens are recorded at 2.2. The top view is never decoded or encoded.
+- `shadow_quality` (perspective only, `"low"`, `"medium"` default or `"high"`) is HPL3's graphics setting for shadow edges: one depth compare per pixel at `low`, and HPL2's jittered disk of 16 or 32 taps at `medium` and `high`, which takes 4 taps first and the rest only on a penumbra. Each casting spot has its own map of 256, 512 or 1024 texels a side; at most 4 spots cast per frame.
   - `wireframe` draws edges: triangle edges in `perspective`, a one-pixel outline in `top`.
   - `lit` on `top` is an error.
 - In the top view an entity is a 4-unit square, red at hp 0 and green at hp 100.
@@ -68,6 +75,7 @@ The result holds an image block (base64 PNG, `image/png`) followed by metadata:
 | `view_mode`, `show_grid` | The drawing settings used. |
 | `exposure`, `white_point`, `gamma` | Perspective only: the scene's exposure and white point and the display gamma used. |
 | `point_lights`, `spot_lights`, `gobo_frames` | Perspective only: how many point lights, spot lights and gobo frames the scene holds. |
+| `shadow_quality`, `shadow_spots` | Perspective only: the shadow quality used and how many spot lights cast shadows. |
 | `off_screen` | Entities outside the view: for `perspective`, mesh instances whose bounds lie fully outside the view frustum. |
 | `adapter` | `name`, `backend` and `device_type` of the GPU or software adapter. |
 | `bucket` | `<platform>_<backend>`, for example `windows_dx12`, the golden bucket this frame belongs to. |
