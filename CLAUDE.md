@@ -9,6 +9,7 @@ Read `PRD.md` first.
 ## HPL3 first, Unreal as a would-like
 
 - Hard rule: HPL3, the engine behind Amnesia: The Bunker that Tickora reverse-engineers, comes first. Wherever its choices are known (Frictional's tech posts, `docs/research/bunker-look.md`, `research-private/bunker/NOTES.md`), follow HPL3, because that keeps the engine simpler to code.
+- Hard rule: when something about HPL3 is not found, run four times as many web searches before reporting it as unknown or asking Felipe to choose without it.
 - Unreal is a would-like, mainly for Blueprints-style scripting and mesh modification, and the reference where HPL3 is silent. Features already built from Unreal (camera, viewports, screenshots, automation tests, naming) stay as they are.
 
 ## Review images in paint.net
