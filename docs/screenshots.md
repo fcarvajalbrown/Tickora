@@ -40,9 +40,9 @@ Every light has intensity 4, chosen by Felipe from frames at 2, 4 and 8. The gob
 
 A second room for shadows and specular (`docs/design/phase-8-shadows-specular.md`), the same room 20 m along -X (centred on X -2000, behind the first room's doorway camera, so no first-room shot sees it, not even in wireframe), holds three plain crates and two gloss crates, `crate_gloss_dull` and `crate_gloss_sharp`, whose materials `gloss_dull` and `gloss_sharp` are the only ones with specular. Its lights reach 6 m and none touches the first room:
 
-- Two shadow-casting spots at Z 340 pointing down, fov 60, over X -2300: High resolution at Y -150 and Low at Y 150, each beside a crate.
+- Two shadow-casting spots at X -2380 and Z 200, pitched 48 degrees down toward a crate 180 cm ahead, fov 60, so each crate throws a long shadow along +X: High resolution at Y -150 and Low at Y 150.
 - A shadow-casting spot at X -1800, Y -250, Z 50 looking along +X, fov 40 and aspect 2, with the `bars` gobo, throwing a crate's shadow onto the far wall.
-- A point light at X -1725, Y 380, Z 150 and a spot at X -1725, Y 250, Z 300 pointing down, over the gloss crates.
+- Over the gloss crates, a point light at X -1725, Y 380, Z 150 by the wall and a spot at X -1500, Y 250, Z 220 aimed back along -X, 35 degrees down; the specular shots stand at each light's mirror angle.
 
 ## Drawing
 

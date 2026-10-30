@@ -37,12 +37,14 @@ pub const POINT_LIGHT_Y_CM: f64 = 250.0;
 pub const POINT_LIGHT_Z_CM: f64 = 100.0;
 pub const POINT_LIGHT_RADIUS_CM: f64 = 300.0;
 pub const DOORWAY_X_CM: f64 = -600.0;
-pub const SHADOW_SPOT_Z_CM: f64 = 340.0;
-pub const SHADOW_SPOT_X_CM: f64 = -2300.0;
+pub const SHADOW_SPOT_Z_CM: f64 = 200.0;
+pub const SHADOW_SPOT_X_CM: f64 = -2380.0;
 pub const SHADOW_SPOT_Y_CM: f64 = 150.0;
+pub const SHADOW_SPOT_PITCH: f64 = -48.0;
 pub const GOBO_SHADOW_SPOT: [f64; 3] = [-1800.0, -250.0, 50.0];
 pub const GLOSS_POINT_LIGHT: [f64; 3] = [-1725.0, 380.0, 150.0];
-pub const GLOSS_SPOT: [f64; 3] = [-1725.0, 250.0, 300.0];
+pub const GLOSS_SPOT: [f64; 3] = [-1500.0, 250.0, 220.0];
+pub const GLOSS_SPOT_ROTATION: [f64; 3] = [-35.0, 180.0, 0.0];
 pub const SECOND_ROOM_RADIUS_CM: f64 = 600.0;
 pub const GLOSS_DULL: Material = Material {
     specular: [0.3, 0.3, 0.3],
@@ -275,9 +277,12 @@ fn down_spot(location: [f64; 3]) -> SpotLight {
 }
 
 pub fn second_room_spots() -> Vec<SpotLight> {
+    let aimed = Rotator::new(SHADOW_SPOT_PITCH, 0.0, 0.0);
     let mut high = down_spot([SHADOW_SPOT_X_CM, -SHADOW_SPOT_Y_CM, SHADOW_SPOT_Z_CM]);
+    high.rotation = aimed;
     high.cast_shadows = true;
     let mut low = down_spot([SHADOW_SPOT_X_CM, SHADOW_SPOT_Y_CM, SHADOW_SPOT_Z_CM]);
+    low.rotation = aimed;
     low.cast_shadows = true;
     low.shadow_resolution = ShadowResolution::Low;
     let mut bars = SpotLight::new(GOBO_SHADOW_SPOT, Rotator::default());
@@ -287,7 +292,9 @@ pub fn second_room_spots() -> Vec<SpotLight> {
     bars.aspect = BARS_SPOT_ASPECT;
     bars.gobo = Some(GoboRef::still("bars"));
     bars.cast_shadows = true;
-    let gloss = down_spot(GLOSS_SPOT);
+    let mut gloss = down_spot(GLOSS_SPOT);
+    let [pitch, yaw, roll] = GLOSS_SPOT_ROTATION;
+    gloss.rotation = Rotator::new(pitch, yaw, roll);
     vec![high, low, bars, gloss]
 }
 
