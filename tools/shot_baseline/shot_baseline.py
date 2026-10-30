@@ -47,6 +47,49 @@ def compare(before: Path, after: Path) -> dict[str, list[str]]:
     return report
 
 
+def rgb_pairs(before: Path, after: Path):
+    from PIL import Image
+
+    old = Image.open(before).convert("RGB")
+    new = Image.open(after).convert("RGB")
+    if old.size != new.size:
+        raise SystemExit(f"{after} is {new.size}, {before} is {old.size}")
+    a, b = old.tobytes(), new.tobytes()
+    return old, new, [(a[i : i + 3], b[i : i + 3]) for i in range(0, len(a), 3)]
+
+
+def pixel_stats(before: Path, after: Path) -> dict[str, int]:
+    old, _, pairs = rgb_pairs(before, after)
+    darker = brighter = changed = largest = 0
+    for p0, p1 in pairs:
+        delta = sum(p1) - sum(p0)
+        if p0 != p1:
+            changed += 1
+            largest = max(largest, *(abs(x1 - x0) for x0, x1 in zip(p0, p1)))
+        if delta < 0:
+            darker += 1
+        elif delta > 0:
+            brighter += 1
+    return {"changed": changed, "darker": darker, "brighter": brighter, "max_delta": largest, "pixels": old.width * old.height}
+
+
+def diff_image(before: Path, after: Path, out: Path, gain: int) -> None:
+    from PIL import Image
+
+    old, new, pairs = rgb_pairs(before, after)
+    marks = bytearray()
+    for p0, p1 in pairs:
+        delta = sum(p1) - sum(p0)
+        level = min(255, abs(delta) * gain)
+        marks += bytes((level, 0, 0) if delta < 0 else (0, level, 0))
+    diff = Image.frombytes("RGB", old.size, bytes(marks))
+    canvas = Image.new("RGB", (old.width * 3, old.height))
+    for index, tile in enumerate([old, new, diff]):
+        canvas.paste(tile, (index * old.width, 0))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out)
+
+
 def sheet(base: Path, prefixes: list[str], out: Path, columns: int) -> list[str]:
     from PIL import Image, ImageDraw
 
@@ -94,6 +137,9 @@ def main(argv: list[str]) -> int:
     cmp.add_argument("before", type=Path)
     cmp.add_argument("after", type=Path)
     cmp.add_argument("--allow-new", action="store_true", help="shots only in AFTER do not fail")
+    cmp.add_argument("--diff-dir", type=Path, help="write BEFORE | AFTER | diff (red darker, green brighter) for each changed shot")
+    cmp.add_argument("--gain", type=int, default=8, help="diff brightness per unit of summed RGB change")
+    cmp.add_argument("--stats", action="store_true", help="for each changed shot print changed, darker and brighter pixel counts and the largest channel delta")
     sht = commands.add_parser("sheet", help="tile recorded shots whose folder starts with a prefix into one labelled PNG")
     sht.add_argument("base", type=Path)
     sht.add_argument("--out", type=Path, required=True)
@@ -109,7 +155,16 @@ def main(argv: list[str]) -> int:
     report = compare(args.before, args.after)
     for key in ["changed", "only_before", "only_after"]:
         for name in report[key]:
-            print(f"{key}: {name}")
+            if key == "changed" and args.diff_dir:
+                diff_image(args.before / name, args.after / name, args.diff_dir / (name.replace("/", "__")), args.gain)
+            if key == "changed" and args.stats:
+                stats = pixel_stats(args.before / name, args.after / name)
+                print(
+                    f"changed: {name} pixels {stats['changed']} of {stats['pixels']}, "
+                    f"darker {stats['darker']}, brighter {stats['brighter']}, max delta {stats['max_delta']}"
+                )
+            else:
+                print(f"{key}: {name}")
     print(
         f"same {len(report['same'])}, changed {len(report['changed'])}, "
         f"only before {len(report['only_before'])}, only after {len(report['only_after'])}"
