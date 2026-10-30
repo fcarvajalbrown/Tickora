@@ -2,5 +2,11 @@
  {"piece": "room", "at": [0.0, 0.0, 0.0]},
  {"piece": "crate", "at": [-1.5, 1.5, 0.0]},
  {"piece": "crate", "at": [1.5, -1.5, 0.0]},
- {"piece": "crate", "at": [4.0, 2.5, 0.0]}
+ {"piece": "crate", "at": [4.0, 2.5, 0.0]},
+ {"piece": "room", "at": [-20.0, 0.0, 0.0]},
+ {"piece": "crate", "at": [-22.0, 1.5, 0.0]},
+ {"piece": "crate", "at": [-22.0, -1.5, 0.0]},
+ {"piece": "crate", "at": [-15.2, 2.5, 0.0]},
+ {"piece": "crate_gloss_dull", "at": [-18.0, -2.5, 0.0]},
+ {"piece": "crate_gloss_sharp", "at": [-16.5, -2.5, 0.0]}
 ]}

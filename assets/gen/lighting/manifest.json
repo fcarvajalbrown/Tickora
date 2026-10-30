@@ -13,6 +13,32 @@
    "piece": "crate",
    "triangles": 12
   },
+  "crate_gloss_dull": {
+   "collision": "none",
+   "files": [
+    "meshes/crate_gloss_dull.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "gloss_dull"
+   ],
+   "name": "crate_gloss_dull",
+   "piece": "crate_gloss_dull",
+   "triangles": 12
+  },
+  "crate_gloss_sharp": {
+   "collision": "none",
+   "files": [
+    "meshes/crate_gloss_sharp.glb"
+   ],
+   "instance": false,
+   "materials": [
+    "gloss_sharp"
+   ],
+   "name": "crate_gloss_sharp",
+   "piece": "crate_gloss_sharp",
+   "triangles": 12
+  },
   "room": {
    "collision": "none",
    "files": [
@@ -31,6 +57,12 @@
  "pieces": {
   "crate": [
    "crate"
+  ],
+  "crate_gloss_dull": [
+   "crate_gloss_dull"
+  ],
+  "crate_gloss_sharp": [
+   "crate_gloss_sharp"
   ],
   "room": [
    "room"

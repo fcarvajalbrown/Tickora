@@ -11,5 +11,11 @@
  ]},
  "crate": {"parts": [
   {"t": "box", "m": "wood", "size": [0.6, 0.6, 0.6], "at": [0.0, 0.0, 0.3]}
+ ]},
+ "crate_gloss_dull": {"parts": [
+  {"t": "box", "m": "gloss_dull", "size": [0.6, 0.6, 0.6], "at": [0.0, 0.0, 0.3]}
+ ]},
+ "crate_gloss_sharp": {"parts": [
+  {"t": "box", "m": "gloss_sharp", "size": [0.6, 0.6, 0.6], "at": [0.0, 0.0, 0.3]}
  ]}
 }

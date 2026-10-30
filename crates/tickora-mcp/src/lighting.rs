@@ -40,6 +40,10 @@ pub const DOORWAY_X_CM: f64 = -600.0;
 
 const ROOM_GLB: &[u8] = include_bytes!("../../../assets/gen/lighting/meshes/room.glb");
 const CRATE_GLB: &[u8] = include_bytes!("../../../assets/gen/lighting/meshes/crate.glb");
+const CRATE_GLOSS_DULL_GLB: &[u8] =
+    include_bytes!("../../../assets/gen/lighting/meshes/crate_gloss_dull.glb");
+const CRATE_GLOSS_SHARP_GLB: &[u8] =
+    include_bytes!("../../../assets/gen/lighting/meshes/crate_gloss_sharp.glb");
 const LAYOUT_CSV: &str = include_str!("../../../assets/gen/lighting/layout.csv");
 const BARS_PNG: &[u8] = include_bytes!("../../../assets/gen/lighting/gobos/bars.png");
 const FLICKER_PNGS: [&[u8]; 4] = [
@@ -277,6 +281,14 @@ fn assets() -> &'static Assets {
         let meshes = BTreeMap::from([
             ("room", mesh("room", ROOM_GLB)),
             ("crate", mesh("crate", CRATE_GLB)),
+            (
+                "crate_gloss_dull",
+                mesh("crate_gloss_dull", CRATE_GLOSS_DULL_GLB),
+            ),
+            (
+                "crate_gloss_sharp",
+                mesh("crate_gloss_sharp", CRATE_GLOSS_SHARP_GLB),
+            ),
         ]);
         let instances = layout_rows(LAYOUT_CSV)
             .into_iter()
@@ -352,12 +364,28 @@ mod tests {
     use tickora_render::ShadowQuality;
 
     #[test]
-    fn layout_rows_read_the_room_and_three_crates_in_centimetres() {
+    fn layout_rows_read_both_rooms_in_centimetres() {
         let rows = layout_rows(LAYOUT_CSV);
         let pieces: Vec<&str> = rows.iter().map(|row| row.piece.as_str()).collect();
-        assert_eq!(pieces, ["room", "crate", "crate", "crate"]);
+        assert_eq!(
+            pieces,
+            [
+                "room",
+                "crate",
+                "crate",
+                "crate",
+                "room",
+                "crate",
+                "crate",
+                "crate",
+                "crate_gloss_dull",
+                "crate_gloss_sharp"
+            ]
+        );
         assert_eq!(rows[1].location, [-150.0, -150.0, 0.0]);
         assert_eq!(rows[3].location, [400.0, -250.0, 0.0]);
+        assert_eq!(rows[4].location, [-2000.0, 0.0, 0.0]);
+        assert_eq!(rows[9].location, [-1650.0, 250.0, 0.0]);
         assert!(rows.iter().all(|row| row.yaw == 0.0 && row.scale == 1.0));
     }
 
@@ -386,7 +414,7 @@ mod tests {
                 .light_bytes(&scene.camera, ShadowQuality::default())
                 .is_ok()
         );
-        assert_eq!(scene.instances.len(), 4);
+        assert_eq!(scene.instances.len(), 10);
     }
 
     #[test]
