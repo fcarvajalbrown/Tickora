@@ -1,6 +1,6 @@
 # Phase 8 design, item 4: spot light shadows and specular highlights
 
-Status: draft, waiting for Felipe's approval.
+Status: approved by Felipe.
 
 Today every light in `Scene3` passes through walls and crates, and every surface is matte: the lit shader adds Lambert diffuse and nothing else. This item adds HPL3's shadow maps for spot lights and HPL's Blinn-Phong specular for both light types.
 
