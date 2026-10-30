@@ -13,7 +13,7 @@ pub mod tone;
 pub use camera::{Camera, OrthoCamera, PerspectiveCamera, Rotator, Viewport};
 pub use compare::{Comparison, Tolerance, compare};
 pub use image::Image;
-pub use light::GoboAnim;
+pub use light::{GoboAnim, ShadowQuality, ShadowResolution};
 pub use mesh::{Mesh, Primitive};
 pub use renderer::{AdapterChoice, AdapterInfo, Renderer};
 pub use scene::{Color, Fill, Grid, Layout, PixelRect, Quad, Scene, ViewMode};
