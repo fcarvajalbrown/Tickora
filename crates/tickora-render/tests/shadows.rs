@@ -218,6 +218,7 @@ impl Reference {
         let mut linear = AMBIENT;
         let mut penumbra = false;
         let mut boundary = false;
+        let mut lowest = 1.0_f64;
         for (spot, map) in &self.spots {
             let to_light = [
                 spot.location[0] - point[0],
@@ -267,6 +268,7 @@ impl Reference {
             if shadow > 0.0 && shadow < 1.0 && cone > 0.0 && falloff > 0.0 {
                 penumbra = true;
             }
+            lowest = lowest.min(shadow);
             let lambert = dot(normal, direction).max(0.0);
             linear += f64::from(spot.intensity) * lambert * falloff * cone * shadow;
         }
@@ -274,6 +276,7 @@ impl Reference {
             linear,
             penumbra,
             boundary,
+            shadow: lowest,
         })
     }
 }
@@ -282,6 +285,7 @@ struct Prediction {
     linear: f64,
     penumbra: bool,
     boundary: bool,
+    shadow: f64,
 }
 
 fn byte(linear: f64) -> u8 {
@@ -662,4 +666,77 @@ fn shadows_and_materials_do_nothing_unlit_or_in_wireframe() {
         };
         assert_eq!(frame(&casting), frame(&plain), "{mode:?}");
     }
+}
+
+fn geometrically_shadowed(plates: &[Plate], point: Vec3, light: Vec3) -> bool {
+    let direction = [
+        light[0] - point[0],
+        light[1] - point[1],
+        light[2] - point[2],
+    ];
+    plates.iter().any(|plate| {
+        let t = (plate.z - point[2]) / direction[2];
+        let at = add(point, direction, t);
+        t > 1.0e-6 && t < 1.0 && plate.contains(at[0], at[1])
+    })
+}
+
+#[test]
+fn off_axis_occluders_shadow_the_side_away_from_their_lights() {
+    let mut low_plate = occluder(-300.0);
+    low_plate.centre[0] = 90.0;
+    let mut high_plate = occluder(300.0);
+    high_plate.centre[0] = -90.0;
+    let plates = [floor(), low_plate, high_plate];
+    let mut low = caster(-300.0, ShadowResolution::Low);
+    low.fov = 60.0;
+    let mut high = caster(300.0, ShadowResolution::High);
+    high.fov = 60.0;
+    let scene = scene(&plates, vec![low, high], overhead(0.0, 600.0));
+    let reference = Reference::new(&scene, &plates, ShadowQuality::Low);
+    let image = render(&scene, ShadowQuality::Low);
+    let lights: Vec<Vec3> = scene.spots.iter().map(|spot| spot.location).collect();
+    let (mut agree, mut disagree, mut shadowed) = (0, 0, 0);
+    let mut off = Vec::new();
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let Some(prediction) = reference.predict([x, y]) else {
+                continue;
+            };
+            let Some((0, point)) = reference.surface(f64::from(x) + 0.5, f64::from(y) + 0.5) else {
+                continue;
+            };
+            if prediction.boundary {
+                continue;
+            }
+            let lit_in_reference = prediction.shadow > 0.5;
+            let shadow = lights.iter().any(|light| {
+                let reach = (point[1] - light[1]).abs() < 250.0;
+                reach && geometrically_shadowed(&plates[1..], point, *light)
+            });
+            shadowed += usize::from(shadow);
+            if lit_in_reference != shadow {
+                agree += 1;
+            } else {
+                disagree += 1;
+            }
+            let expected = byte(prediction.linear);
+            let actual = image.pixel(x, y);
+            if !actual[..3].iter().all(|c| c.abs_diff(expected) <= 1) {
+                off.push(([x, y], actual[0], expected, point, shadow));
+            }
+        }
+    }
+    assert!(
+        off.is_empty(),
+        "{} pixels off the reference, first {:?}",
+        off.len(),
+        &off[..off.len().min(8)]
+    );
+    assert!(shadowed > 50, "{shadowed} geometrically shadowed pixels");
+    assert!(
+        disagree * 100 <= agree,
+        "reference and geometry disagree on {disagree} of {} floor pixels",
+        agree + disagree
+    );
 }

@@ -47,6 +47,35 @@ def compare(before: Path, after: Path) -> dict[str, list[str]]:
     return report
 
 
+def sheet(base: Path, prefixes: list[str], out: Path, columns: int) -> list[str]:
+    from PIL import Image, ImageDraw
+
+    picked = []
+    for name in sorted(shots(base)):
+        if "/" not in name:
+            continue
+        folder = name.split("/")[-2]
+        if not prefixes or any(folder.startswith(prefix) for prefix in prefixes):
+            picked.append((folder, base / name))
+    if not picked:
+        raise SystemExit(f"no shots under {base} start with {prefixes}")
+    tiles = [(folder, Image.open(path).convert("RGB")) for folder, path in picked]
+    width = max(tile.width for _, tile in tiles)
+    height = max(tile.height for _, tile in tiles)
+    label = 18
+    rows = (len(tiles) + columns - 1) // columns
+    canvas = Image.new("RGB", (columns * width, rows * (height + label)), (40, 40, 40))
+    draw = ImageDraw.Draw(canvas)
+    for index, (folder, tile) in enumerate(tiles):
+        x = (index % columns) * width
+        y = (index // columns) * (height + label)
+        draw.text((x + 4, y + 3), folder, fill=(230, 230, 230))
+        canvas.paste(tile, (x, y + label))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out)
+    return [folder for folder, _ in tiles]
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Record every scenario shot into a scratch copy on one adapter, or compare two recorded sets byte for byte."
@@ -65,9 +94,18 @@ def main(argv: list[str]) -> int:
     cmp.add_argument("before", type=Path)
     cmp.add_argument("after", type=Path)
     cmp.add_argument("--allow-new", action="store_true", help="shots only in AFTER do not fail")
+    sht = commands.add_parser("sheet", help="tile recorded shots whose folder starts with a prefix into one labelled PNG")
+    sht.add_argument("base", type=Path)
+    sht.add_argument("--out", type=Path, required=True)
+    sht.add_argument("--columns", type=int, default=4)
+    sht.add_argument("prefixes", nargs="*")
     args = parser.parse_args(argv)
     if args.command == "record":
         return record(args.out, args.adapter, args.binary, args.scenarios)
+    if args.command == "sheet":
+        for folder in sheet(args.base, args.prefixes, args.out, args.columns):
+            print(folder)
+        return 0
     report = compare(args.before, args.after)
     for key in ["changed", "only_before", "only_after"]:
         for name in report[key]:

@@ -256,13 +256,13 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
 ";
 
 const SHADOW_SHADER: &str = "
-@group(0) @binding(0) var<uniform> view_projection: mat4x4<f32>;
-
 @vertex
-fn vs(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
-    return view_projection * vec4<f32>(position, 1.0);
+fn vs(@location(0) clip: vec4<f32>) -> @builtin(position) vec4<f32> {
+    return clip;
 }
 ";
+
+const CLIP_VERTEX_SIZE: u64 = 16;
 
 const TONE_SHADER: &str = "
 const A: f32 = 0.15;
@@ -315,7 +315,12 @@ struct MeshPipelines {
     triangles: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
-    shadow_layout: wgpu::BindGroupLayout,
+}
+
+struct ShadowDraw {
+    view: wgpu::TextureView,
+    casters: Option<(wgpu::Buffer, u32)>,
+    side: u32,
 }
 
 struct JitterMaps {
@@ -537,30 +542,21 @@ impl Renderer {
         } else {
             Vec::new()
         };
-        let shadow_draws: Vec<(wgpu::TextureView, wgpu::BindGroup, u32)> = casting
+        let shadow_draws: Vec<ShadowDraw> = casting
             .iter()
             .enumerate()
             .map(|(layer, spot)| {
-                let bytes: Vec<u8> = spot
-                    .view_projection()
-                    .column_major_f32()
-                    .iter()
-                    .flat_map(|value| value.to_le_bytes())
-                    .collect();
-                let buffer = self
-                    .device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("tickora shadow view"),
-                        contents: &bytes,
-                        usage: wgpu::BufferUsages::UNIFORM,
-                    });
-                let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("tickora shadow view"),
-                    layout: &self.mesh.shadow_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: buffer.as_entire_binding(),
-                    }],
+                let clips = clip_vertices(&batches, &spot.view_projection());
+                let count = (clips.len() as u64 / CLIP_VERTEX_SIZE) as u32;
+                let buffer = (count > 0).then(|| {
+                    let buffer =
+                        self.device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("tickora shadow casters"),
+                                contents: &clips,
+                                usage: wgpu::BufferUsages::VERTEX,
+                            });
+                    (buffer, count)
                 });
                 let view = shadow_texture.create_view(&wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2),
@@ -568,7 +564,11 @@ impl Renderer {
                     array_layer_count: Some(1),
                     ..Default::default()
                 });
-                (view, group, spot.shadow_resolution.side())
+                ShadowDraw {
+                    view,
+                    casters: buffer,
+                    side: spot.shadow_resolution.side(),
+                }
             })
             .collect();
         let frame_buffer = self
@@ -681,7 +681,12 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("tickora frame"),
             });
-        for (view, group, side) in &shadow_draws {
+        for ShadowDraw {
+            view,
+            casters,
+            side,
+        } in &shadow_draws
+        {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("tickora shadow map"),
                 color_attachments: &[],
@@ -698,11 +703,10 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_viewport(0.0, 0.0, *side as f32, *side as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.mesh.shadow);
-            pass.set_bind_group(0, group, &[]);
-            for (batch, buffer, _) in &draws {
+            if let Some((buffer, count)) = casters {
+                pass.set_pipeline(&self.mesh.shadow);
                 pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..batch.vertex_count(), 0..1);
+                pass.draw(0..*count, 0..1);
             }
         }
         {
@@ -978,6 +982,28 @@ impl Renderer {
         readback.unmap();
         Image::new(width, height, pixels)
     }
+}
+
+fn clip_vertices(batches: &[Batch], view_projection: &crate::math::Mat4) -> Vec<u8> {
+    let stride = scene3::VERTEX_SIZE as usize;
+    let mut bytes = Vec::new();
+    for batch in batches {
+        for vertex in batch.vertices.chunks(stride) {
+            let read = |at: usize| {
+                f64::from(f32::from_le_bytes([
+                    vertex[at],
+                    vertex[at + 1],
+                    vertex[at + 2],
+                    vertex[at + 3],
+                ]))
+            };
+            let clip = view_projection.apply([read(0), read(4), read(8), 1.0]);
+            for value in clip {
+                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+    }
+    bytes
 }
 
 fn rgba_view(
@@ -1295,22 +1321,9 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
         label: Some("tickora shadow maps"),
         source: wgpu::ShaderSource::Wgsl(SHADOW_SHADER.into()),
     });
-    let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("tickora shadow view"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(64),
-            },
-            count: None,
-        }],
-    });
     let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("tickora shadow maps"),
-        bind_group_layouts: &[Some(&shadow_layout)],
+        bind_group_layouts: &[],
         ..Default::default()
     });
     let shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1321,9 +1334,9 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: scene3::VERTEX_SIZE,
+                array_stride: CLIP_VERTEX_SIZE,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x4],
             })],
         },
         primitive: wgpu::PrimitiveState {
@@ -1345,7 +1358,6 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
     });
     MeshPipelines {
         shadow,
-        shadow_layout,
         lit: build(wgpu::PrimitiveTopology::TriangleList, "fs_lit"),
         triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
         lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
