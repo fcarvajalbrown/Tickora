@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::camera::{PerspectiveCamera, Rotator};
 use crate::image::Image;
-use crate::light::{self, GoboAnim, ShadowQuality, ShadowResolution};
+use crate::light::{self, GoboAnim, RasterBias, ShadowQuality, ShadowResolution};
 use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
 use crate::scene::Color;
@@ -16,7 +16,6 @@ pub const MIN_GOBO_SIDE: u32 = 16;
 pub const MAX_GOBO_SIDE: u32 = 256;
 pub const DEFAULT_SPOT_RADIUS: f64 = 10000.0;
 pub const MAX_SHADOW_SPOTS: usize = 4;
-pub const SHADOW_BIAS_CM: f64 = 2.0;
 pub const SHADOW_BLUR: f64 = 6.0;
 pub const POINT_LIGHT_SIZE: usize = 64;
 pub const SPOT_LIGHT_SIZE: usize = 160;
@@ -133,8 +132,8 @@ impl SpotLight {
         specular_of(self.color, self.specular_color, self.cast_specular)
     }
 
-    pub fn shadow_bias_cm(&self) -> f64 {
-        SHADOW_BIAS_CM * f64::from(self.shadow_bias_mul)
+    pub fn shadow_raster_bias(&self) -> RasterBias {
+        RasterBias::new(self.shadow_bias_mul, self.shadow_slope_bias_mul)
     }
 
     pub fn shadow_normal_offset_cm(&self) -> f64 {
@@ -542,8 +541,8 @@ impl Scene3 {
                         0.0,
                         shadow,
                         spot.shadow_resolution.side() as f32,
-                        spot.shadow_bias_cm() as f32,
                         spot.shadow_normal_offset_cm() as f32,
+                        0.0,
                     ]);
                 }
                 None => put(&[0.0; SPOT_LIGHT_SIZE / 4]),
@@ -825,7 +824,7 @@ mod tests {
         assert!((values[11] - 45f32.to_radians().cos()).abs() < 1e-6);
         assert_eq!(values[12..16], [1.0, 4.0, -1.0, 10.0]);
         assert_eq!(values[16..20], [0.25, 0.5, 0.75, 0.0]);
-        assert_eq!(values[20..], [0.0, 256.0, 4.0, 1.5]);
+        assert_eq!(values[20..], [0.0, 256.0, 1.5, 0.0]);
         assert!(bytes[spots + SPOT_LIGHT_SIZE..].iter().all(|&b| b == 0));
     }
 
@@ -844,7 +843,13 @@ mod tests {
             (false, true, [1.0; 3])
         );
         assert_eq!(cone.shadow_resolution, ShadowResolution::High);
-        assert_eq!(cone.shadow_bias_cm(), SHADOW_BIAS_CM);
+        assert_eq!(
+            cone.shadow_raster_bias(),
+            RasterBias {
+                constant: -1,
+                slope_scale: -1.0
+            }
+        );
         assert_eq!(cone.shadow_normal_offset_cm(), 3.0);
         cone.cast_specular = false;
         assert_eq!(cone.specular(), [0.0; 3]);

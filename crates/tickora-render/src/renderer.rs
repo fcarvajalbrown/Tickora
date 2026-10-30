@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard, mpsc};
 
@@ -5,7 +6,7 @@ use wgpu::util::DeviceExt;
 
 use crate::camera::{OrthoCamera, PerspectiveCamera};
 use crate::image::Image;
-use crate::light::{self, ShadowQuality};
+use crate::light::{self, RasterBias, ShadowQuality};
 use crate::scene::{Layout, PixelRect, Scene, ViewMode};
 use crate::scene3::{self, Batch, Scene3};
 use crate::tone::{self, Display};
@@ -56,7 +57,7 @@ struct Spot {
     forward_cos_half: vec4<f32>,
     falloff_cone_layer_near: vec4<f32>,
     specular: vec4<f32>,
-    shadow_layer_side_bias_offset: vec4<f32>,
+    shadow_layer_side_offset: vec4<f32>,
 }
 
 struct Frame {
@@ -147,8 +148,8 @@ fn jitter_offset(pixel: vec2<u32>, tap: u32) -> vec2<f32> {
 }
 
 fn spot_shadow(spot: Spot, world: vec3<f32>, normal: vec3<f32>, direction: vec3<f32>, pixel: vec2<u32>) -> f32 {
-    let shadow = spot.shadow_layer_side_bias_offset;
-    let receiver = world + normal * ((1.0 - dot(normal, direction)) * shadow.w);
+    let shadow = spot.shadow_layer_side_offset;
+    let receiver = world + normal * ((1.0 - dot(normal, direction)) * shadow.z);
     let clip = spot.view_projection * vec4<f32>(receiver, 1.0);
     if clip.w <= 0.0 {
         return 1.0;
@@ -159,7 +160,7 @@ fn spot_shadow(spot: Spot, world: vec3<f32>, normal: vec3<f32>, direction: vec3<
     }
     let uv = vec2<f32>(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
     let base = uv * shadow.y;
-    let depth = dot(receiver - spot.position_radius.xyz, spot.forward_cos_half.xyz) - shadow.z;
+    let depth = dot(receiver - spot.position_radius.xyz, spot.forward_cos_half.xyz);
     let near = spot.falloff_cone_layer_near.w;
     let layer = i32(shadow.x);
     let taps = frame.counts.z;
@@ -238,7 +239,7 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
         } else {
             shape = spot_gobo(spot, input.world);
         }
-        if spot.shadow_layer_side_bias_offset.x >= 0.0 {
+        if spot.shadow_layer_side_offset.x >= 0.0 {
             shape = shape * spot_shadow(spot, input.world, normal, direction, pixel);
         }
         light = light + spot.color_intensity.rgb * spot.color_intensity.w * lambert * falloff * shape;
@@ -314,12 +315,28 @@ struct MeshPipelines {
     white: Image,
     triangles: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
-    shadow: wgpu::RenderPipeline,
+    shadow: ShadowPipelines,
+}
+
+struct ShadowPipelines {
+    module: wgpu::ShaderModule,
+    layout: wgpu::PipelineLayout,
+    by_bias: Mutex<HashMap<(i32, u32), wgpu::RenderPipeline>>,
+}
+
+impl ShadowPipelines {
+    fn get(&self, device: &wgpu::Device, bias: RasterBias) -> wgpu::RenderPipeline {
+        let mut by_bias = self.by_bias.lock().unwrap_or_else(|e| e.into_inner());
+        by_bias
+            .entry((bias.constant, bias.slope_scale.to_bits()))
+            .or_insert_with(|| shadow_pipeline(device, &self.module, &self.layout, bias))
+            .clone()
+    }
 }
 
 struct ShadowDraw {
     view: wgpu::TextureView,
-    casters: Option<(wgpu::Buffer, u32)>,
+    casters: Option<(wgpu::Buffer, u32, wgpu::RenderPipeline)>,
     side: u32,
 }
 
@@ -556,7 +573,11 @@ impl Renderer {
                                 contents: &clips,
                                 usage: wgpu::BufferUsages::VERTEX,
                             });
-                    (buffer, count)
+                    let pipeline = self
+                        .mesh
+                        .shadow
+                        .get(&self.device, spot.shadow_raster_bias());
+                    (buffer, count, pipeline)
                 });
                 let view = shadow_texture.create_view(&wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2),
@@ -703,8 +724,8 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_viewport(0.0, 0.0, *side as f32, *side as f32, 0.0, 1.0);
-            if let Some((buffer, count)) = casters {
-                pass.set_pipeline(&self.mesh.shadow);
+            if let Some((buffer, count, pipeline)) = casters {
+                pass.set_pipeline(pipeline);
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 pass.draw(0..*count, 0..1);
             }
@@ -1326,11 +1347,38 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
         bind_group_layouts: &[],
         ..Default::default()
     });
-    let shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let shadow = ShadowPipelines {
+        module: shadow_module,
+        layout: shadow_pipeline_layout,
+        by_bias: Mutex::new(HashMap::new()),
+    };
+    MeshPipelines {
+        shadow,
+        lit: build(wgpu::PrimitiveTopology::TriangleList, "fs_lit"),
+        triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
+        lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
+        frame_layout,
+        texture_layout,
+        sampler,
+        white: Image {
+            width: 1,
+            height: 1,
+            pixels: vec![255; 4],
+        },
+    }
+}
+
+fn shadow_pipeline(
+    device: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    bias: RasterBias,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("tickora shadow maps"),
-        layout: Some(&shadow_pipeline_layout),
+        layout: Some(layout),
         vertex: wgpu::VertexState {
-            module: &shadow_module,
+            module,
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
@@ -1349,27 +1397,17 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
             depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
+            bias: wgpu::DepthBiasState {
+                constant: bias.constant,
+                slope_scale: bias.slope_scale,
+                clamp: 0.0,
+            },
         }),
         multisample: wgpu::MultisampleState::default(),
         fragment: None,
         multiview_mask: None,
         cache: None,
-    });
-    MeshPipelines {
-        shadow,
-        lit: build(wgpu::PrimitiveTopology::TriangleList, "fs_lit"),
-        triangles: build(wgpu::PrimitiveTopology::TriangleList, "fs_unlit"),
-        lines: build(wgpu::PrimitiveTopology::LineList, "fs_unlit"),
-        frame_layout,
-        texture_layout,
-        sampler,
-        white: Image {
-            width: 1,
-            height: 1,
-            pixels: vec![255; 4],
-        },
-    }
+    })
 }
 
 fn tone_pipeline(device: &wgpu::Device) -> TonePipeline {

@@ -161,18 +161,46 @@ fn shadow_map(spot: &SpotLight, plates: &[Plate]) -> ShadowMap {
     let side = spot.shadow_resolution.side() as usize;
     let [forward, right, up] = spot.rotation.axes();
     let half = (spot.fov.to_radians() / 2.0).tan();
+    let bias = spot.shadow_raster_bias();
+    let texel_ray = |column: f64, row: f64| {
+        let ndc_x = 2.0 * (column + 0.5) / side as f64 - 1.0;
+        let ndc_y = 1.0 - 2.0 * (row + 0.5) / side as f64;
+        add(
+            add(forward, right, ndc_x * half * spot.aspect),
+            up,
+            ndc_y * half,
+        )
+    };
+    let plane_depth = |plate: &Plate, direction: Vec3| {
+        spot.near_plane * direction[2] / (plate.z - spot.location[2])
+    };
+    let deepest = |plate: &Plate| {
+        let h = plate.half;
+        [(-h, -h), (h, -h), (h, h), (-h, h)]
+            .into_iter()
+            .map(|(dx, dy)| {
+                let corner = [plate.centre[0] + dx, plate.centre[1] + dy, plate.z];
+                let to_corner = [
+                    corner[0] - spot.location[0],
+                    corner[1] - spot.location[1],
+                    corner[2] - spot.location[2],
+                ];
+                spot.near_plane / dot(to_corner, forward)
+            })
+            .fold(0.0, f64::max)
+    };
     let mut stored = vec![0.0; side * side];
     for row in 0..side {
         for column in 0..side {
-            let ndc_x = 2.0 * (column as f64 + 0.5) / side as f64 - 1.0;
-            let ndc_y = 1.0 - 2.0 * (row as f64 + 0.5) / side as f64;
-            let direction = add(
-                add(forward, right, ndc_x * half * spot.aspect),
-                up,
-                ndc_y * half,
-            );
-            if let Some((_, depth)) = hit(plates, spot.location, direction) {
-                stored[row * side + column] = spot.near_plane / depth;
+            let (x, y) = (column as f64, row as f64);
+            let direction = texel_ray(x, y);
+            if let Some((index, _)) = hit(plates, spot.location, direction) {
+                let plate = &plates[index];
+                let depth = plane_depth(plate, direction);
+                let slope = (plane_depth(plate, texel_ray(x + 1.0, y)) - depth)
+                    .abs()
+                    .max((plane_depth(plate, texel_ray(x, y + 1.0)) - depth).abs());
+                stored[row * side + column] = bias.apply(depth, deepest(plate), slope);
             }
         }
     }
@@ -245,7 +273,6 @@ impl Reference {
                 location: spot.location,
                 forward,
                 near_plane: spot.near_plane,
-                bias_cm: spot.shadow_bias_cm(),
                 blur: SHADOW_BLUR,
             };
             let factor =

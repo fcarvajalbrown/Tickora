@@ -29,7 +29,7 @@ The ROADMAP line asks for "shadows from point and spot lights". HPL3 casts no sh
 | Map resolution | Low, Medium, High per light, default High | 256, 512, 1024, default High |
 | Cap | none known | at most 4 shadow-casting spots per frame |
 | Edge filter | jittered disk, 0, 16 or 32 samples | HPL2's jittered disk, built from a seeded PCG32, default Medium (16) |
-| Bias | rasterizer bias, global times per-light multipliers | the same two per-light multipliers, applied in the lit shader |
+| Bias | rasterizer bias, `glPolygonOffset(1.0 * slope mul, 0.5 * bias mul)` on a `GL_DEPTH_COMPONENT32` map | the same rasterizer bias on a Depth32Float map, constant rounded to a whole unit (step 5, Felipe's choice) |
 | Specular model | not seen; HPL2 is Blinn-Phong | HPL2's Blinn-Phong with HPL3's fields |
 | Material specular | specular map, RGB intensity, power in alpha | per-material values now, maps with normal maps in 8.5 |
 | Light specular colour | separate SpecularColor, CastSpecularLight | the light's colour unless set, `cast_specular` on by default |
@@ -49,7 +49,7 @@ All distances are Unreal centimetres. For a lit surface point `p` with normal `n
 
 - Each casting spot renders scene depth through its existing `view_projection` (reversed Z, infinite far plane, the spot's near plane), so a stored value is `near_plane / d` with `d` the depth along the spot's forward axis.
 - The lit shader moves the receiver first: `p' = p + n * (1 - dot(n, l)) * SHADOW_NORMAL_OFFSET_CM * shadow_slope_bias_mul`, with `SHADOW_NORMAL_OFFSET_CM = 3` from HPL2's 0.03 m. HPL2 skips this move when the spot has a gobo, because that path reuses the gobo's projection; Tickora always applies it.
-- A tap at texel `t` is lit when `dot(p' - location, forward) - SHADOW_BIAS_CM * shadow_bias_mul <= near_plane / stored(t)`, comparing in centimetres, so the bias does not depend on the depth format. `SHADOW_BIAS_CM` is set by Felipe at step 5.
+- A tap at texel `t` is lit when `dot(p' - location, forward) <= near_plane / stored(t)`. Changed at step 5 from a centimetre bias in this compare to HPL3's rasterizer bias on the shadow pass: `DepthBiasState { constant: -round(0.5 * shadow_bias_mul), slope_scale: -1.0 * shadow_slope_bias_mul }`, negative because the map is reversed Z, rounded half away from zero because wgpu and D3D12 take an integer constant. wgpu fixes the bias per pipeline, so the renderer builds one shadow pipeline per distinct bias the first time a spot needs it. The f64 reference applies D3D12's float-depth rule per plate: `stored + constant * 2^(exponent(max stored) - 23) + slope_scale * max(|dz/dx|, |dz/dy|)`, clamped to 0..1.
 - Texels are read with `textureLoad`, nearest, at `floor(uv * side + offset * SHADOW_BLUR)`, clamped to the map. `SHADOW_BLUR` is HPL2's per-light blur amount. The Bunker executable has no such name, so Tickora keeps one constant, set at step 5.
 - Quality, as HPL2 on shader model 4:
   - Low: one tap, no offset.
@@ -73,7 +73,7 @@ The device keeps `wgpu::Limits::downlevel_defaults()`. Today the frame uniform i
 | --- | --- | --- |
 | Frame header | view-projection 64, ambient 16, counts 16 | view-projection 64, camera position 16, ambient 16, counts 16 (lights, spots, shadow taps, 0) |
 | `Light` | 48 bytes (position and radius, colour and intensity, falloff) | 64: adds the specular colour, zero when off |
-| `Spot` | 128 bytes | 160: adds the specular colour and a shadow vector (map layer or -1, map side, bias in cm, normal offset in cm); the near plane goes in the spare slot of `falloff_cone_layer` |
+| `Spot` | 128 bytes | 160: adds the specular colour and a shadow vector (map layer or -1, map side, normal offset in cm, spare); the near plane goes in the spare slot of `falloff_cone_layer` |
 | Frame uniform | 2,912 bytes | 64 + 48 + 16 x 64 + 16 x 160 = 3,696 bytes, under the 16,384-byte limit |
 | Group 0 | frame uniform, gobo array | adds the shadow maps (`texture_depth_2d_array`, `textureLoad`) and the jitter map (`texture_2d<f32>`, `textureLoad`) |
 | Group 1 | albedo, sampler | adds one 16-byte uniform per batch: material specular and power |
@@ -102,7 +102,7 @@ Unchanged, Felipe's choice. It has only point lights and no material table, so a
 ## Goldens, recorded once
 
 1. With everything in place, render every new lighting shot locally, headless, into scratch copies of `scenarios/` (`CARGO_TARGET_DIR=target/verify` while the MCP server holds the release binary). Open them in paint.net for Felipe.
-2. Felipe sets `SHADOW_BIAS_CM`, `SHADOW_BLUR`, the gloss materials and the second room's light intensities. Step 1 runs again until he is satisfied. Nothing is committed as a golden before that.
+2. Felipe sets the bias, `SHADOW_BLUR`, the gloss materials and the second room's light intensities. Step 1 runs again until he is satisfied. Nothing is committed as a golden before that.
 3. Commit and push the code with no goldens for the new shots. CI fails on that commit, as expected, and uploads `scenario-shots-Windows` and `scenario-shots-Linux`.
 4. Download both and copy `windows_dx12.png` and `linux_vulkan.png` into each new folder. No `.altN` files. Compare the 14 arena shots and the 13 first-room shots in the artifacts against the committed files, byte for byte. If any differ, stop and tell Felipe.
 5. Commit the goldens on their own with the run ID, push, and confirm CI is green on both platforms. Record the run IDs in the ROADMAP and session notes.

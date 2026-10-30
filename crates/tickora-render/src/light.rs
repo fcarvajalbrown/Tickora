@@ -10,6 +10,9 @@ pub const DEFAULT_SPOT_FALLOFF_POW: f64 = 1.0;
 pub const MIN_SPOT_FOV: f64 = 1.0;
 pub const MAX_SPOT_FOV: f64 = 179.0;
 pub const SHADOW_NORMAL_OFFSET_CM: f64 = 3.0;
+pub const SHADOW_DEPTH_BIAS: f64 = 0.5;
+pub const SHADOW_SLOPE_BIAS: f64 = 1.0;
+pub const DEPTH_MANTISSA_BITS: i32 = 23;
 pub const JITTER_TILE: usize = 32;
 pub const JITTER_SEED: u64 = 0;
 
@@ -256,8 +259,34 @@ pub struct ShadowSpot {
     pub location: Vec3,
     pub forward: Vec3,
     pub near_plane: f64,
-    pub bias_cm: f64,
     pub blur: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RasterBias {
+    pub constant: i32,
+    pub slope_scale: f32,
+}
+
+impl RasterBias {
+    pub fn new(bias_mul: f32, slope_bias_mul: f32) -> Self {
+        let reversed_depth = -1.0;
+        RasterBias {
+            constant: (reversed_depth * SHADOW_DEPTH_BIAS * f64::from(bias_mul)).round() as i32,
+            slope_scale: (reversed_depth * SHADOW_SLOPE_BIAS * f64::from(slope_bias_mul)) as f32,
+        }
+    }
+
+    pub fn apply(&self, depth: f64, max_depth: f64, max_slope: f64) -> f64 {
+        let unit = if max_depth > 0.0 {
+            2f64.powi(max_depth.log2().floor() as i32 - DEPTH_MANTISSA_BITS)
+        } else {
+            0.0
+        };
+        let biased =
+            depth + f64::from(self.constant) * unit + f64::from(self.slope_scale) * max_slope;
+        biased.clamp(0.0, 1.0)
+    }
 }
 
 pub fn shadow_factor(
@@ -277,7 +306,7 @@ pub fn shadow_factor(
             receiver[2] - spot.location[2],
         ],
         spot.forward,
-    ) - spot.bias_cm;
+    );
     let last = (map.side - 1) as f64;
     let tap = |offset: [f64; 2]| {
         let x = (uv[0] * map.side as f64 + offset[0] * spot.blur)
@@ -597,7 +626,6 @@ mod tests {
             location,
             forward: rotation.axes()[0],
             near_plane: 10.0,
-            bias_cm: 1.0,
             blur,
         }
     }
@@ -650,30 +678,62 @@ mod tests {
     }
 
     #[test]
-    fn the_bias_lets_a_surface_light_itself() {
+    fn the_raster_bias_is_hpl3s_half_unit_and_unit_slope_rounded_and_reversed() {
+        let default = RasterBias::new(1.0, 1.0);
+        assert_eq!([default.constant, default.slope_scale as i32], [-1, -1]);
+        assert_eq!(
+            RasterBias::new(2.0, 0.5),
+            RasterBias {
+                constant: -1,
+                slope_scale: -0.5
+            }
+        );
+        assert_eq!(RasterBias::new(3.0, 0.0).constant, -2);
+        assert_eq!(RasterBias::new(0.0, 0.0).constant, 0);
+        assert_eq!(RasterBias::new(0.0, 0.0).slope_scale, 0.0);
+    }
+
+    #[test]
+    fn the_raster_bias_moves_one_float_step_and_the_slope_and_stays_in_range() {
+        let bias = RasterBias::new(1.0, 1.0);
+        let depth = 10.0 / 400.0;
+        assert_eq!(bias.apply(depth, depth, 0.0), depth - 2f64.powi(-29));
+        assert!(close(
+            bias.apply(depth, depth, 1.0e-4),
+            depth - 2f64.powi(-29) - 1.0e-4
+        ));
+        assert_eq!(bias.apply(1.0e-9, 1.0e-9, 1.0), 0.0);
+        assert_eq!(RasterBias::new(0.0, 0.0).apply(depth, depth, 0.5), depth);
+    }
+
+    #[test]
+    fn the_raster_bias_lets_a_surface_light_itself() {
         let spot = floor_spot(0.0);
-        let own = ShadowMap {
+        let bias = RasterBias::new(1.0, 1.0);
+        let own = 10.0 / 400.0;
+        let biased = ShadowMap {
             side: 8,
-            stored: vec![10.0 / 400.0; 64],
+            stored: vec![bias.apply(own, own, 0.0); 64],
         };
         assert_eq!(
-            shadow_factor(&own, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
+            shadow_factor(&biased, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
             1.0
         );
-        let unbiased = ShadowSpot {
-            bias_cm: 0.0,
-            ..spot
-        };
-        let ahead = ShadowMap {
+        let ahead = 10.0 / 399.999;
+        let unbiased = ShadowMap {
             side: 8,
-            stored: vec![10.0 / 399.5; 64],
+            stored: vec![ahead; 64],
         };
         assert_eq!(
-            shadow_factor(&ahead, &unbiased, None, [0.0, 0.0, 0.0], [0, 0]),
+            shadow_factor(&unbiased, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
             0.0
         );
+        let sloped = ShadowMap {
+            side: 8,
+            stored: vec![bias.apply(ahead, ahead, 1.0e-4); 64],
+        };
         assert_eq!(
-            shadow_factor(&ahead, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
+            shadow_factor(&sloped, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
             1.0
         );
     }
@@ -707,11 +767,7 @@ mod tests {
                             .floor()
                             .clamp(0.0, 63.0);
                         let stored = map.stored[y as usize * 64 + x as usize];
-                        if stored * (400.0 - spot.bias_cm) <= 10.0 {
-                            1.0
-                        } else {
-                            0.0
-                        }
+                        if stored * 400.0 <= 10.0 { 1.0 } else { 0.0 }
                     };
                     let first: f64 = (0..4).map(tap).sum();
                     let mean = (0..samples).map(tap).sum::<f64>() / samples as f64;
