@@ -24,7 +24,7 @@ Status: **In Progress**. Builds on phase 6; visuals like Amnesia: The Bunker (PR
 1. Done. Study Amnesia: The Bunker's look; findings in `docs/research/bunker-look.md` before the rest of the list is fixed.
 2. Done. Linear space and HDR (design `docs/design/phase-8-linear-hdr.md`, CI run 40891832875): 2.2 power decode of colour textures, 16-bit float light buffer, Hable's filmic curve with a white point, manual exposure, one gamma encode at the end.
 3. Done. Spot lights with gobo textures (design `docs/design/phase-8-spot-lights.md`, CI run 40918042503, goldens from 40917327743): HPL3 frustum spots, HPL3 distance falloff for spots and points, tick-driven gobos, the lighting scene; `low` still passes.
-4. In Progress. Shadows from spot lights, and specular highlights (design `docs/design/phase-8-shadows-specular.md`): HPL3 shadow maps for casting spots, HPL2 jitter filter, Blinn-Phong specular, a second lighting room. Steps 1 to 4 of 8 done; step 5, Felipe judging frames, is next.
+4. Done. Shadows from spot lights, and specular highlights (design `docs/design/phase-8-shadows-specular.md`, CI run 41160246291, goldens from 41158610447): HPL3 shadow maps for casting spots, HPL3's spot shadow filter in place of the HPL2 jitter disk (Felipe's choice at step 5), Blinn-Phong specular, a second lighting room; `low` still passes.
 5. Not Started. Normal maps, mipmaps, filtered and anisotropic sampling.
 6. Not Started. Exposure areas: per-area exposure in sim volumes that fade from one value to another over ticks, as in HPL3; fog reuses the volumes.
 7. Not Started. Distance and height fog, with fog volumes.
