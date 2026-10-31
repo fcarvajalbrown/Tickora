@@ -67,16 +67,11 @@ struct Frame {
     spots: array<Spot, 16>,
 }
 
-struct Material {
-    specular_power: vec4<f32>,
-}
-
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var gobos: texture_2d_array<f32>;
 @group(0) @binding(2) var shadow_maps: texture_depth_2d_array;
 @group(1) @binding(0) var albedo: texture_2d<f32>;
 @group(1) @binding(1) var albedo_sampler: sampler;
-@group(1) @binding(2) var<uniform> material: Material;
 
 struct Out {
     @builtin(position) position: vec4<f32>,
@@ -84,6 +79,7 @@ struct Out {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
+    @location(4) @interpolate(flat) specular_power: vec4<f32>,
 }
 
 @vertex
@@ -92,6 +88,7 @@ fn vs(
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
+    @location(4) specular_power: vec4<f32>,
 ) -> Out {
     var out: Out;
     out.position = frame.view_projection * vec4<f32>(position, 1.0);
@@ -99,6 +96,7 @@ fn vs(
     out.normal = normal;
     out.uv = uv;
     out.color = color;
+    out.specular_power = specular_power;
     return out;
 }
 
@@ -210,9 +208,9 @@ fn spot_gobo(spot: Spot, world: vec3<f32>) -> vec3<f32> {
 fn fs_lit(input: Out) -> @location(0) vec4<f32> {
     let base = decoded(input.uv);
     let normal = normalize(input.normal);
-    let shine = material.specular_power.rgb;
+    let shine = input.specular_power.rgb;
     let shiny = any(shine > vec3<f32>(0.0));
-    let power = exp2(material.specular_power.w * 10.0) + 1.0;
+    let power = exp2(input.specular_power.w * 10.0) + 1.0;
     let to_camera = normalize(frame.camera_normal_offset.xyz - input.world);
     var light = frame.ambient.rgb;
     var specular = vec3<f32>(0.0);
@@ -589,7 +587,7 @@ impl Renderer {
                 },
             ],
         });
-        let draws: Vec<(&Batch, wgpu::Buffer, wgpu::BindGroup)> = batches
+        let draws: Vec<(&Batch, wgpu::Buffer, wgpu::Buffer, wgpu::BindGroup)> = batches
             .iter()
             .map(|batch| {
                 let buffer = self
@@ -608,7 +606,14 @@ impl Renderer {
                 } else {
                     scene3::Material::default()
                 };
-                (batch, buffer, self.texture_group(image, &material))
+                let material_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("tickora material"),
+                            contents: &material.bytes(),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                (batch, buffer, material_buffer, self.texture_group(image))
             })
             .collect();
         let curve = if view_mode == ViewMode::Lit { 1.0 } else { 0.0 };
@@ -722,9 +727,10 @@ impl Renderer {
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &frame_group, &[]);
-            for (batch, buffer, texture) in &draws {
+            for (batch, buffer, material, texture) in &draws {
                 pass.set_bind_group(1, texture, &[]);
                 pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.set_vertex_buffer(1, material.slice(..));
                 pass.draw(0..batch.vertex_count(), 0..1);
             }
         }
@@ -794,14 +800,7 @@ impl Renderer {
         })
     }
 
-    fn texture_group(&self, image: &Image, material: &scene3::Material) -> wgpu::BindGroup {
-        let material_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("tickora material"),
-                contents: &material.bytes(),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+    fn texture_group(&self, image: &Image) -> wgpu::BindGroup {
         let texture = self.device.create_texture_with_data(
             &self.queue,
             &wgpu::TextureDescriptor {
@@ -833,10 +832,6 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.mesh.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: material_buffer.as_entire_binding(),
                 },
             ],
         })
@@ -1174,16 +1169,6 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(scene3::MATERIAL_BYTES_SIZE as u64),
-                },
-                count: None,
-            },
         ],
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -1206,6 +1191,7 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
         2 => Float32x2,
         3 => Float32x4
     ];
+    let material_attributes = wgpu::vertex_attr_array![4 => Float32x4];
     let build = |topology: wgpu::PrimitiveTopology, fragment: &str| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("tickora meshes"),
@@ -1214,11 +1200,18 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
                 module: &module,
                 entry_point: Some("vs"),
                 compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: scene3::VERTEX_SIZE,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attributes,
-                })],
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: scene3::VERTEX_SIZE,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &attributes,
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: scene3::MATERIAL_BYTES_SIZE as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &material_attributes,
+                    }),
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 topology,

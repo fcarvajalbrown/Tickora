@@ -504,9 +504,12 @@ fn floor_point(camera: &PerspectiveCamera, pixel: [u32; 2]) -> Vec3 {
 }
 
 fn gloss_prediction(scene: &Scene3, pixel: [u32; 2]) -> [f64; 3] {
+    gloss_prediction_for(scene, &scene.material("matte"), pixel)
+}
+
+fn gloss_prediction_for(scene: &Scene3, material: &Material, pixel: [u32; 2]) -> [f64; 3] {
     let point = floor_point(&scene.camera, pixel);
     let lamp = scene.lights[0];
-    let material = scene.material("matte");
     let normal = [0.0, 0.0, 1.0];
     let to_light = [
         lamp.location[0] - point[0],
@@ -605,6 +608,67 @@ fn a_specular_colour_tints_the_highlight() {
     let actual = image.pixel(mirror[0], mirror[1]);
     assert!(actual[0] > actual[1] + 10, "{actual:?}");
     expect_close(&image, mirror, gloss_prediction(&scene, mirror));
+}
+
+#[test]
+fn two_gloss_materials_in_one_frame_each_match_their_own_reference() {
+    let camera =
+        PerspectiveCamera::new([-300.0, 0.0, 200.0], Rotator::new(-30.0, 0.0, 0.0), 90.0).unwrap();
+    let left = Plate {
+        centre: [0.0, -FLOOR_HALF / 2.0],
+        half: FLOOR_HALF / 2.0,
+        z: 0.0,
+    };
+    let right = Plate {
+        centre: [0.0, FLOOR_HALF / 2.0],
+        half: FLOOR_HALF / 2.0,
+        z: 0.0,
+    };
+    let dull = Material {
+        specular: [0.3, 0.3, 0.3],
+        specular_power: 0.3,
+    };
+    let sharp = Material {
+        specular: [0.6, 0.6, 0.6],
+        specular_power: 0.7,
+    };
+    let mut scene = scene(&[], Vec::new(), camera);
+    scene.instances = vec![
+        MeshInstance::new(plate_mesh(&left, "dull"), [0.0; 3]),
+        MeshInstance::new(plate_mesh(&right, "sharp"), [0.0; 3]),
+    ];
+    scene.lights = vec![lamp()];
+    scene.materials.insert("dull".to_string(), dull);
+    scene.materials.insert("sharp".to_string(), sharp);
+    let image = render(&scene, ShadowQuality::Medium);
+    let mut checked = [0, 0];
+    let mut off = Vec::new();
+    for y in (HEIGHT / 2..HEIGHT).step_by(3) {
+        for x in (0..WIDTH).step_by(3) {
+            let point = floor_point(&camera, [x, y]);
+            if point[1].abs() < 20.0 {
+                continue;
+            }
+            let (side, material) = if point[1] < 0.0 {
+                (0, &dull)
+            } else {
+                (1, &sharp)
+            };
+            checked[side] += 1;
+            let linear = gloss_prediction_for(&scene, material, [x, y]);
+            let actual = image.pixel(x, y);
+            if (0..3).any(|c| actual[c].abs_diff(byte(linear[c])) > 1) {
+                off.push(([x, y], side, actual, linear.map(byte)));
+            }
+        }
+    }
+    assert!(checked[0] > 100 && checked[1] > 100, "{checked:?}");
+    assert!(
+        off.is_empty(),
+        "{} of {checked:?} pixels off, first {:?}",
+        off.len(),
+        &off[..off.len().min(5)]
+    );
 }
 
 #[test]
