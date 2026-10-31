@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 
 use crate::camera::{OrthoCamera, PerspectiveCamera};
 use crate::image::Image;
-use crate::light::{self, RasterBias, ShadowQuality};
+use crate::light::RasterBias;
 use crate::scene::{Layout, PixelRect, Scene, ViewMode};
 use crate::scene3::{self, Batch, Scene3};
 use crate::tone::{self, Display};
@@ -41,8 +41,6 @@ fn fs(input: Out) -> @location(0) vec4<f32> {
 const MESH_SHADER: &str = "
 const CONTENT_GAMMA: f32 = 2.2;
 
-const JITTER_TILE: u32 = 32u;
-
 struct Light {
     position_radius: vec4<f32>,
     color_intensity: vec4<f32>,
@@ -57,12 +55,12 @@ struct Spot {
     forward_cos_half: vec4<f32>,
     falloff_cone_layer_near: vec4<f32>,
     specular: vec4<f32>,
-    shadow_layer_side_offset: vec4<f32>,
+    shadow_layer_side_transition_far: vec4<f32>,
 }
 
 struct Frame {
     view_projection: mat4x4<f32>,
-    camera_blur: vec4<f32>,
+    camera_normal_offset: vec4<f32>,
     ambient: vec4<f32>,
     counts: vec4<u32>,
     lights: array<Light, 16>,
@@ -76,7 +74,6 @@ struct Material {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var gobos: texture_2d_array<f32>;
 @group(0) @binding(2) var shadow_maps: texture_depth_2d_array;
-@group(0) @binding(3) var jitter: texture_2d<f32>;
 @group(1) @binding(0) var albedo: texture_2d<f32>;
 @group(1) @binding(1) var albedo_sampler: sampler;
 @group(1) @binding(2) var<uniform> material: Material;
@@ -132,24 +129,26 @@ fn spot_cone(spot: Spot, from_light: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(raised(1.0 - sqrt(t), spot.falloff_cone_layer_near.y));
 }
 
-fn shadow_tap(layer: i32, side: f32, base: vec2<f32>, offset: vec2<f32>, depth: f32, near: f32) -> f32 {
-    let texel = clamp(floor(base + offset * frame.camera_blur.w), vec2<f32>(0.0), vec2<f32>(side - 1.0));
-    let stored = textureLoad(shadow_maps, vec2<i32>(texel), layer, 0);
-    return select(0.0, 1.0, stored * depth <= near);
+fn shadow_occlusion(layer: i32, side: i32, texel: vec2<i32>, depth: f32, transition: f32) -> f32 {
+    let at = clamp(texel, vec2<i32>(0), vec2<i32>(side - 1));
+    let stored = textureLoad(shadow_maps, at, layer, 0);
+    return clamp(1.0 + (stored - depth) * transition, 0.0, 1.0);
 }
 
-fn jitter_offset(pixel: vec2<u32>, tap: u32) -> vec2<f32> {
-    let texel = vec2<u32>(pixel.x % JITTER_TILE, pixel.y % JITTER_TILE + JITTER_TILE * (tap / 2u));
-    let pair = textureLoad(jitter, texel, 0) * 2.0 - 1.0;
-    if tap % 2u == 0u {
-        return pair.xy;
+fn kernel_weight(kernel: i32, index: i32, fraction: f32) -> f32 {
+    if index == 0 {
+        return 1.0 - fraction;
     }
-    return pair.zw;
+    if index == kernel - 1 {
+        return fraction;
+    }
+    return 1.0;
 }
 
-fn spot_shadow(spot: Spot, world: vec3<f32>, normal: vec3<f32>, direction: vec3<f32>, pixel: vec2<u32>) -> f32 {
-    let shadow = spot.shadow_layer_side_offset;
-    let receiver = world + normal * ((1.0 - dot(normal, direction)) * shadow.z);
+fn spot_shadow(spot: Spot, world: vec3<f32>, normal: vec3<f32>, direction: vec3<f32>) -> f32 {
+    let shadow = spot.shadow_layer_side_transition_far;
+    let offset = frame.camera_normal_offset.w;
+    let receiver = world + normal * ((1.0 - dot(normal, direction)) * offset);
     let clip = spot.view_projection * vec4<f32>(receiver, 1.0);
     if clip.w <= 0.0 {
         return 1.0;
@@ -159,26 +158,31 @@ fn spot_shadow(spot: Spot, world: vec3<f32>, normal: vec3<f32>, direction: vec3<
         return 1.0;
     }
     let uv = vec2<f32>(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
-    let base = uv * shadow.y;
-    let depth = dot(receiver - spot.position_radius.xyz, spot.forward_cos_half.xyz);
     let near = spot.falloff_cone_layer_near.w;
+    let far = shadow.w;
+    let distance = dot(receiver - spot.position_radius.xyz, spot.forward_cos_half.xyz);
+    let depth = far / (far - near) * (1.0 - near / distance);
     let layer = i32(shadow.x);
-    let taps = frame.counts.z;
-    if taps <= 1u {
-        return shadow_tap(layer, shadow.y, base, vec2<f32>(0.0), depth, near);
+    let side = i32(shadow.y);
+    let texel = uv * shadow.y - 0.5;
+    let base = floor(texel);
+    let fraction = texel - base;
+    let kernel = i32(frame.counts.z);
+    let first = vec2<i32>(base) - vec2<i32>(kernel / 2 - 1);
+    var sum = 0.0;
+    for (var j = 0; j < kernel; j = j + 1) {
+        let row_weight = kernel_weight(kernel, j, fraction.y);
+        for (var i = 0; i < kernel; i = i + 1) {
+            let weight = row_weight * kernel_weight(kernel, i, fraction.x);
+            sum = sum + weight * shadow_occlusion(layer, side, first + vec2<i32>(i, j), depth, shadow.z);
+        }
     }
-    var first = 0.0;
-    for (var tap = 0u; tap < 4u; tap = tap + 1u) {
-        first = first + shadow_tap(layer, shadow.y, base, jitter_offset(pixel, tap), depth, near);
+    if kernel == 2 {
+        return sum;
     }
-    if first == 0.0 || first == 4.0 {
-        return first / 4.0;
-    }
-    var rest = 0.0;
-    for (var tap = 4u; tap < taps; tap = tap + 1u) {
-        rest = rest + shadow_tap(layer, shadow.y, base, jitter_offset(pixel, tap), depth, near);
-    }
-    return first / f32(taps) + rest / f32(taps);
+    let spread = f32(kernel - 1);
+    let amount = sum / (spread * spread);
+    return amount * amount * (3.0 - 2.0 * amount);
 }
 
 fn blinn_phong(normal: vec3<f32>, direction: vec3<f32>, to_camera: vec3<f32>, power: f32) -> f32 {
@@ -209,8 +213,7 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
     let shine = material.specular_power.rgb;
     let shiny = any(shine > vec3<f32>(0.0));
     let power = exp2(material.specular_power.w * 10.0) + 1.0;
-    let to_camera = normalize(frame.camera_blur.xyz - input.world);
-    let pixel = vec2<u32>(input.position.xy);
+    let to_camera = normalize(frame.camera_normal_offset.xyz - input.world);
     var light = frame.ambient.rgb;
     var specular = vec3<f32>(0.0);
     for (var index = 0u; index < frame.counts.x; index = index + 1u) {
@@ -239,8 +242,8 @@ fn fs_lit(input: Out) -> @location(0) vec4<f32> {
         } else {
             shape = spot_gobo(spot, input.world);
         }
-        if spot.shadow_layer_side_offset.x >= 0.0 {
-            shape = shape * spot_shadow(spot, input.world, normal, direction, pixel);
+        if spot.shadow_layer_side_transition_far.x >= 0.0 {
+            shape = shape * spot_shadow(spot, input.world, normal, direction);
         }
         light = light + spot.color_intensity.rgb * spot.color_intensity.w * lambert * falloff * shape;
         if shiny {
@@ -340,22 +343,6 @@ struct ShadowDraw {
     side: u32,
 }
 
-struct JitterMaps {
-    low: wgpu::TextureView,
-    medium: wgpu::TextureView,
-    high: wgpu::TextureView,
-}
-
-impl JitterMaps {
-    fn get(&self, quality: ShadowQuality) -> &wgpu::TextureView {
-        match quality {
-            ShadowQuality::Low => &self.low,
-            ShadowQuality::Medium => &self.medium,
-            ShadowQuality::High => &self.high,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdapterChoice {
     Auto,
@@ -405,7 +392,6 @@ pub struct Renderer {
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
     mesh: MeshPipelines,
-    jitter: JitterMaps,
     tone: TonePipeline,
     info: AdapterInfo,
     one_frame_at_a_time: Mutex<()>,
@@ -443,25 +429,11 @@ impl Renderer {
         let pipeline = pipeline(&device);
         let mesh = mesh_pipelines(&device);
         let tone = tone_pipeline(&device);
-        let jitter = JitterMaps {
-            low: rgba_view(&device, &queue, "tickora jitter", 1, 1, &[128; 4]),
-            medium: jitter_view(
-                &device,
-                &queue,
-                &light::jitter_map(ShadowQuality::Medium.taps()),
-            ),
-            high: jitter_view(
-                &device,
-                &queue,
-                &light::jitter_map(ShadowQuality::High.taps()),
-            ),
-        };
         Ok(Renderer {
             device,
             queue,
             pipeline,
             mesh,
-            jitter,
             tone,
             info,
             one_frame_at_a_time: Mutex::new(()),
@@ -563,7 +535,7 @@ impl Renderer {
             .iter()
             .enumerate()
             .map(|(layer, spot)| {
-                let clips = clip_vertices(&batches, &spot.view_projection());
+                let clips = clip_vertices(&batches, &spot.shadow_projection());
                 let count = (clips.len() as u64 / CLIP_VERTEX_SIZE) as u32;
                 let buffer = (count > 0).then(|| {
                     let buffer =
@@ -614,12 +586,6 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(
-                        self.jitter.get(display.shadow_quality),
-                    ),
                 },
             ],
         });
@@ -714,7 +680,7 @@ impl Renderer {
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(0.0),
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
@@ -1027,53 +993,6 @@ fn clip_vertices(batches: &[Batch], view_projection: &crate::math::Mat4) -> Vec<
     bytes
 }
 
-fn rgba_view(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    label: &str,
-    width: u32,
-    height: u32,
-    pixels: &[u8],
-) -> wgpu::TextureView {
-    device
-        .create_texture_with_data(
-            queue,
-            &wgpu::TextureDescriptor {
-                label: Some(label),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: FORMAT,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::LayerMajor,
-            pixels,
-        )
-        .create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn jitter_view(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    map: &light::JitterMap,
-) -> wgpu::TextureView {
-    let pixels: Vec<u8> = map.texels.iter().flatten().copied().collect();
-    rgba_view(
-        device,
-        queue,
-        "tickora jitter",
-        map.width() as u32,
-        map.height() as u32,
-        &pixels,
-    )
-}
-
 fn check_size(width: u32, height: u32) -> Result<(), String> {
     for (name, size) in [("width", width), ("height", height)] {
         if !(MIN_SIZE..=MAX_SIZE).contains(&size) {
@@ -1234,16 +1153,6 @@ fn mesh_pipelines(device: &wgpu::Device) -> MeshPipelines {
                 },
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
         ],
     });
     let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1395,7 +1304,7 @@ fn shadow_pipeline(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Greater),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState {
                 constant: bias.constant,

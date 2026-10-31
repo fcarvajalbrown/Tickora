@@ -1,6 +1,5 @@
 use crate::camera::Rotator;
 use crate::math::{Mat4, Vec3};
-use tickora_core::rng::Rng;
 
 pub const DEFAULT_FALLOFF_POW: f64 = 1.0;
 pub const DEFAULT_SPOT_FOV: f64 = 60.0;
@@ -9,12 +8,11 @@ pub const DEFAULT_SPOT_NEAR_PLANE: f64 = 10.0;
 pub const DEFAULT_SPOT_FALLOFF_POW: f64 = 1.0;
 pub const MIN_SPOT_FOV: f64 = 1.0;
 pub const MAX_SPOT_FOV: f64 = 179.0;
-pub const SHADOW_NORMAL_OFFSET_CM: f64 = 3.0;
+pub const SHADOW_NORMAL_OFFSET_CM: f64 = 0.5;
 pub const SHADOW_DEPTH_BIAS: f64 = 0.5;
 pub const SHADOW_SLOPE_BIAS: f64 = 1.0;
 pub const DEPTH_MANTISSA_BITS: i32 = 23;
-pub const JITTER_TILE: usize = 32;
-pub const JITTER_SEED: u64 = 0;
+pub const CM_PER_M: f64 = 100.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum GoboAnim {
@@ -51,11 +49,11 @@ pub enum ShadowQuality {
 }
 
 impl ShadowQuality {
-    pub fn taps(self) -> usize {
+    pub fn kernel(self) -> usize {
         match self {
-            Self::Low => 1,
-            Self::Medium => 16,
-            Self::High => 32,
+            Self::Low => 2,
+            Self::Medium => 4,
+            Self::High => 6,
         }
     }
 
@@ -96,12 +94,12 @@ pub fn spot_cone(cos_theta: f64, fov: f64, spot_falloff_pow: f64) -> f64 {
     (1.0 - t.sqrt()).powf(spot_falloff_pow)
 }
 
-pub fn spot_view_projection(
+fn spot_projection(
     location: Vec3,
     rotation: Rotator,
     fov: f64,
     aspect: f64,
-    near_plane: f64,
+    depth_row: [f64; 4],
 ) -> Mat4 {
     let [forward, right, up] = rotation.axes();
     let row = |axis: Vec3| {
@@ -113,10 +111,43 @@ pub fn spot_view_projection(
     let projection = Mat4::from_rows([
         [1.0 / (aspect * half), 0.0, 0.0, 0.0],
         [0.0, 1.0 / half, 0.0, 0.0],
-        [0.0, 0.0, 0.0, near_plane],
+        depth_row,
         [0.0, 0.0, 1.0, 0.0],
     ]);
     projection.mul(&view)
+}
+
+pub fn spot_view_projection(
+    location: Vec3,
+    rotation: Rotator,
+    fov: f64,
+    aspect: f64,
+    near_plane: f64,
+) -> Mat4 {
+    spot_projection(location, rotation, fov, aspect, [0.0, 0.0, 0.0, near_plane])
+}
+
+pub fn spot_shadow_projection(
+    location: Vec3,
+    rotation: Rotator,
+    fov: f64,
+    aspect: f64,
+    near_plane: f64,
+    far_plane: f64,
+) -> Mat4 {
+    let scale = far_plane / (far_plane - near_plane);
+    let depth_row = [0.0, 0.0, scale, -scale * near_plane];
+    spot_projection(location, rotation, fov, aspect, depth_row)
+}
+
+pub fn shadow_depth(distance: f64, near_plane: f64, far_plane: f64) -> f64 {
+    far_plane / (far_plane - near_plane) * (1.0 - near_plane / distance)
+}
+
+pub fn shadow_transition(side: u32, near_plane_cm: f64, far_plane_cm: f64) -> f64 {
+    let near = near_plane_cm / CM_PER_M;
+    let far = far_plane_cm / CM_PER_M;
+    (far - near).sqrt() * ((f64::from(side) / 14.4 + 80.0 / 9.0) / near)
 }
 
 pub fn gobo_uv(view_projection: &Mat4, point: Vec3) -> Option<[f64; 2]> {
@@ -181,72 +212,6 @@ pub fn shadow_receiver(point: Vec3, normal: Vec3, to_light: Vec3, offset_cm: f64
     ]
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct JitterMap {
-    pub samples: usize,
-    pub texels: Vec<[u8; 4]>,
-}
-
-impl JitterMap {
-    pub fn width(&self) -> usize {
-        JITTER_TILE
-    }
-
-    pub fn height(&self) -> usize {
-        JITTER_TILE * self.samples / 2
-    }
-
-    pub fn offset(&self, pixel: [u32; 2], tap: usize) -> [f64; 2] {
-        let x = pixel[0] as usize % JITTER_TILE;
-        let y = pixel[1] as usize % JITTER_TILE + JITTER_TILE * (tap / 2);
-        let texel = self.texels[y * JITTER_TILE + x];
-        let pair = 2 * (tap % 2);
-        let decode = |byte: u8| f64::from(byte) / 255.0 * 2.0 - 1.0;
-        [decode(texel[pair]), decode(texel[pair + 1])]
-    }
-}
-
-pub fn jitter_map(samples: usize) -> JitterMap {
-    assert!(
-        samples >= 4 && samples.is_power_of_two(),
-        "jitter samples must be a power of two from 4"
-    );
-    let mut rng = Rng::from_seed(JITTER_SEED);
-    let grid = ((samples as f64).sqrt() + 0.5) as usize;
-    let cells = grid * grid;
-    let tile = JITTER_TILE * JITTER_TILE;
-    let mut texels = vec![[0u8; 4]; tile * samples / 2];
-    let mut unit = || f64::from(rng.next_u32()) / 4_294_967_296.0 - 0.5;
-    for texel in 0..tile {
-        let mut cell = Vec::with_capacity(cells);
-        for y in 0..grid {
-            for x in 0..grid {
-                let jitter_x = unit();
-                let jitter_y = unit();
-                cell.push([
-                    (x as f64 + 0.5 + jitter_x) / grid as f64,
-                    (y as f64 + 0.5 + jitter_y) / grid as f64,
-                ]);
-            }
-        }
-        let mut offsets: Vec<[f64; 2]> = (0..samples)
-            .map(|i| {
-                let [u, v] = cell[i * cells / samples];
-                let angle = std::f64::consts::TAU * u;
-                [v.sqrt() * angle.cos(), v.sqrt() * angle.sin()]
-            })
-            .collect();
-        let length = |o: &[f64; 2]| o[0] * o[0] + o[1] * o[1];
-        offsets.sort_by(|a, b| length(b).total_cmp(&length(a)));
-        let encode = |value: f64| ((value + 1.0) * 0.5 * 255.0) as u8;
-        for slice in 0..samples / 2 {
-            let [a, b] = [offsets[2 * slice], offsets[2 * slice + 1]];
-            texels[slice * tile + texel] = [encode(a[0]), encode(a[1]), encode(b[0]), encode(b[1])];
-        }
-    }
-    JitterMap { samples, texels }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShadowMap {
     pub side: usize,
@@ -259,7 +224,8 @@ pub struct ShadowSpot {
     pub location: Vec3,
     pub forward: Vec3,
     pub near_plane: f64,
-    pub blur: f64,
+    pub far_plane: f64,
+    pub transition: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -270,10 +236,9 @@ pub struct RasterBias {
 
 impl RasterBias {
     pub fn new(bias_mul: f32, slope_bias_mul: f32) -> Self {
-        let reversed_depth = -1.0;
         RasterBias {
-            constant: (reversed_depth * SHADOW_DEPTH_BIAS * f64::from(bias_mul)).round() as i32,
-            slope_scale: (reversed_depth * SHADOW_SLOPE_BIAS * f64::from(slope_bias_mul)) as f32,
+            constant: (SHADOW_DEPTH_BIAS * f64::from(bias_mul)).round() as i32,
+            slope_scale: (SHADOW_SLOPE_BIAS * f64::from(slope_bias_mul)) as f32,
         }
     }
 
@@ -289,17 +254,30 @@ impl RasterBias {
     }
 }
 
+pub fn shadow_occlusion(stored: f64, depth: f64, transition: f64) -> f64 {
+    (1.0 + (stored - depth) * transition).clamp(0.0, 1.0)
+}
+
+pub fn shadow_kernel_weight(kernel: usize, index: usize, fraction: f64) -> f64 {
+    if index == 0 {
+        1.0 - fraction
+    } else if index == kernel - 1 {
+        fraction
+    } else {
+        1.0
+    }
+}
+
 pub fn shadow_factor(
     map: &ShadowMap,
     spot: &ShadowSpot,
-    jitter: Option<&JitterMap>,
+    quality: ShadowQuality,
     receiver: Vec3,
-    pixel: [u32; 2],
 ) -> f64 {
     let Some(uv) = gobo_uv(&spot.view_projection, receiver) else {
         return 1.0;
     };
-    let depth = dot(
+    let distance = dot(
         [
             receiver[0] - spot.location[0],
             receiver[1] - spot.location[1],
@@ -307,33 +285,31 @@ pub fn shadow_factor(
         ],
         spot.forward,
     );
-    let last = (map.side - 1) as f64;
-    let tap = |offset: [f64; 2]| {
-        let x = (uv[0] * map.side as f64 + offset[0] * spot.blur)
-            .floor()
-            .clamp(0.0, last);
-        let y = (uv[1] * map.side as f64 + offset[1] * spot.blur)
-            .floor()
-            .clamp(0.0, last);
-        let stored = map.stored[y as usize * map.side + x as usize];
-        if stored * depth <= spot.near_plane {
-            1.0
-        } else {
-            0.0
+    let depth = shadow_depth(distance, spot.near_plane, spot.far_plane);
+    let side = map.side as f64;
+    let texel = [uv[0] * side - 0.5, uv[1] * side - 0.5];
+    let base = texel.map(f64::floor);
+    let fraction = [texel[0] - base[0], texel[1] - base[1]];
+    let kernel = quality.kernel();
+    let first = kernel as i64 / 2 - 1;
+    let last = map.side as i64 - 1;
+    let mut sum = 0.0;
+    for j in 0..kernel {
+        let row = (base[1] as i64 - first + j as i64).clamp(0, last) as usize;
+        let row_weight = shadow_kernel_weight(kernel, j, fraction[1]);
+        for i in 0..kernel {
+            let column = (base[0] as i64 - first + i as i64).clamp(0, last) as usize;
+            let weight = row_weight * shadow_kernel_weight(kernel, i, fraction[0]);
+            let stored = map.stored[row * map.side + column];
+            sum += weight * shadow_occlusion(stored, depth, spot.transition);
         }
-    };
-    let Some(jitter) = jitter else {
-        return tap([0.0, 0.0]);
-    };
-    let taps = jitter.samples as f64;
-    let first: f64 = (0..4).map(|i| tap(jitter.offset(pixel, i))).sum();
-    if first == 0.0 || first == 4.0 {
-        return first / 4.0;
     }
-    let rest: f64 = (4..jitter.samples)
-        .map(|i| tap(jitter.offset(pixel, i)))
-        .sum();
-    first / taps + rest / taps
+    if kernel == 2 {
+        return sum;
+    }
+    let spread = (kernel - 1) as f64;
+    let amount = sum / (spread * spread);
+    amount * amount * (3.0 - 2.0 * amount)
 }
 
 #[cfg(test)]
@@ -532,7 +508,7 @@ mod tests {
             assert_eq!(ShadowQuality::parse(quality.name()), Some(quality));
         }
         assert_eq!(ShadowQuality::parse("ultra"), None);
-        assert_eq!(all.map(ShadowQuality::taps), [1, 16, 32]);
+        assert_eq!(all.map(ShadowQuality::kernel), [2, 4, 6]);
     }
 
     #[test]
@@ -574,51 +550,12 @@ mod tests {
             point
         );
         let grazing = shadow_receiver(point, up, [1.0, 0.0, 0.0], SHADOW_NORMAL_OFFSET_CM);
-        assert_eq!(grazing, [10.0, 20.0, 3.0]);
-        let half = shadow_receiver(point, up, normalize([1.0, 0.0, 1.0]), 3.0);
-        assert!(close(half[2], 3.0 * (1.0 - 0.5_f64.sqrt())));
+        assert_eq!(grazing, [10.0, 20.0, 0.5]);
+        let half = shadow_receiver(point, up, normalize([1.0, 0.0, 1.0]), 0.5);
+        assert!(close(half[2], 0.5 * (1.0 - 0.5_f64.sqrt())));
     }
 
-    fn jitter_hash(map: &JitterMap) -> u64 {
-        let mut hasher = tickora_core::hash::StateHasher::new();
-        for texel in &map.texels {
-            hasher.write_bytes(texel);
-        }
-        hasher.finish()
-    }
-
-    #[test]
-    fn jitter_maps_are_byte_stable_and_sorted_inside_the_disk() {
-        for samples in [16, 32] {
-            let map = jitter_map(samples);
-            assert_eq!(map, jitter_map(samples));
-            assert_eq!(map.texels.len(), map.width() * map.height());
-            assert_eq!(map.height(), JITTER_TILE * samples / 2);
-            for y in 0..JITTER_TILE as u32 {
-                for x in 0..JITTER_TILE as u32 {
-                    let lengths: Vec<f64> = (0..samples)
-                        .map(|tap| {
-                            let [ox, oy] = map.offset([x, y], tap);
-                            (ox * ox + oy * oy).sqrt()
-                        })
-                        .collect();
-                    for length in &lengths {
-                        assert!(*length <= 1.0 + 3.0 / 255.0, "{length}");
-                    }
-                    for pair in lengths.windows(2) {
-                        assert!(pair[0] + 6.0 / 255.0 >= pair[1], "{pair:?}");
-                    }
-                }
-            }
-            assert_eq!(map.offset([3, 5], 7), map.offset([35, 69], 7));
-        }
-        assert_eq!(
-            [jitter_hash(&jitter_map(16)), jitter_hash(&jitter_map(32))],
-            [3694456948837816401, 18414989285065015924]
-        );
-    }
-
-    fn floor_spot(blur: f64) -> ShadowSpot {
+    fn floor_spot(far_plane: f64, side: u32) -> ShadowSpot {
         let rotation = Rotator::new(-90.0, 0.0, 0.0);
         let location = [0.0, 0.0, 400.0];
         ShadowSpot {
@@ -626,69 +563,168 @@ mod tests {
             location,
             forward: rotation.axes()[0],
             near_plane: 10.0,
-            blur,
+            far_plane,
+            transition: shadow_transition(side, 10.0, far_plane),
         }
     }
 
-    fn half_occluded(side: usize, occluder_depth: f64) -> ShadowMap {
-        let mut stored = vec![0.0; side * side];
+    fn half_occluded(side: usize, stored: f64) -> ShadowMap {
+        let mut map = vec![1.0; side * side];
         for y in 0..side {
             for x in side / 2..side {
-                stored[y * side + x] = 10.0 / occluder_depth;
+                map[y * side + x] = stored;
             }
         }
-        ShadowMap { side, stored }
+        ShadowMap { side, stored: map }
+    }
+
+    const QUALITIES: [ShadowQuality; 3] = [
+        ShadowQuality::Low,
+        ShadowQuality::Medium,
+        ShadowQuality::High,
+    ];
+
+    #[test]
+    fn shadow_depth_runs_from_zero_at_the_near_plane_to_one_at_the_far_plane() {
+        assert_eq!(shadow_depth(10.0, 10.0, 2000.0), 0.0);
+        assert!(close(shadow_depth(2000.0, 10.0, 2000.0), 1.0));
+        let mut previous = 0.0;
+        for step in 1..100 {
+            let depth = shadow_depth(10.0 + f64::from(step) * 19.9, 10.0, 2000.0);
+            assert!(depth > previous);
+            previous = depth;
+        }
+    }
+
+    #[test]
+    fn the_shadow_projection_keeps_the_spots_xy_and_stores_standard_depth() {
+        let rotation = Rotator::new(-60.0, 30.0, 0.0);
+        let location = [100.0, -50.0, 300.0];
+        let gobo = spot_view_projection(location, rotation, 70.0, 1.5, 10.0);
+        let shadow = spot_shadow_projection(location, rotation, 70.0, 1.5, 10.0, 900.0);
+        let [forward, right, up] = rotation.axes();
+        for (along, across, high) in [(50.0, 10.0, -5.0), (400.0, -80.0, 30.0)] {
+            let point: Vec3 = std::array::from_fn(|k| {
+                location[k] + forward[k] * along + right[k] * across + up[k] * high
+            });
+            let a = gobo.apply([point[0], point[1], point[2], 1.0]);
+            let b = shadow.apply([point[0], point[1], point[2], 1.0]);
+            assert!(close(a[0] / a[3], b[0] / b[3]) && close(a[1] / a[3], b[1] / b[3]));
+            assert!(close(b[3], along));
+            assert!(close(b[2] / b[3], shadow_depth(along, 10.0, 900.0)));
+        }
+    }
+
+    #[test]
+    fn the_transition_scale_is_hpl3s_in_metres() {
+        assert!(close(
+            shadow_transition(1024, 10.0, 2000.0),
+            19.9_f64.sqrt() * 800.0
+        ));
+        assert!(close(
+            shadow_transition(256, 50.0, 600.0),
+            5.5_f64.sqrt() * ((256.0 / 14.4 + 80.0 / 9.0) / 0.5)
+        ));
+    }
+
+    #[test]
+    fn each_kernel_is_a_tent_whose_weights_sum_to_its_span() {
+        for kernel in [2, 4, 6] {
+            for fraction in [0.0, 0.25, 0.7, 0.999] {
+                let sum: f64 = (0..kernel)
+                    .map(|i| shadow_kernel_weight(kernel, i, fraction))
+                    .sum();
+                assert!(close(sum, (kernel - 1) as f64), "{kernel} {fraction}");
+            }
+        }
+        assert_eq!(shadow_kernel_weight(4, 0, 0.25), 0.75);
+        assert_eq!(shadow_kernel_weight(4, 2, 0.25), 1.0);
+        assert_eq!(shadow_kernel_weight(4, 3, 0.25), 0.25);
+    }
+
+    #[test]
+    fn the_occlusion_ramp_darkens_over_one_transition_behind_the_stored_depth() {
+        assert_eq!(shadow_occlusion(0.5, 0.5, 100.0), 1.0);
+        assert_eq!(shadow_occlusion(0.6, 0.5, 100.0), 1.0);
+        assert!(close(shadow_occlusion(0.495, 0.5, 100.0), 0.5));
+        assert_eq!(shadow_occlusion(0.49, 0.5, 100.0), 0.0);
     }
 
     #[test]
     fn nothing_in_front_is_lit_and_a_full_occluder_is_dark() {
-        let spot = floor_spot(2.0);
+        let spot = floor_spot(2000.0, 64);
         let open = ShadowMap {
             side: 64,
-            stored: vec![0.0; 64 * 64],
+            stored: vec![1.0; 64 * 64],
         };
         let full = ShadowMap {
             side: 64,
-            stored: vec![10.0 / 200.0; 64 * 64],
+            stored: vec![shadow_depth(200.0, 10.0, 2000.0); 64 * 64],
         };
-        let jitter = jitter_map(16);
-        for point in [[0.0, 0.0, 0.0], [150.0, -90.0, 0.0]] {
-            assert_eq!(
-                shadow_factor(&open, &spot, Some(&jitter), point, [4, 9]),
-                1.0
-            );
-            assert_eq!(
-                shadow_factor(&full, &spot, Some(&jitter), point, [4, 9]),
-                0.0
-            );
-            assert_eq!(shadow_factor(&full, &spot, None, point, [4, 9]), 0.0);
+        for quality in QUALITIES {
+            for point in [[0.0, 0.0, 0.0], [150.0, -90.0, 0.0]] {
+                assert_eq!(shadow_factor(&open, &spot, quality, point), 1.0);
+                assert_eq!(shadow_factor(&full, &spot, quality, point), 0.0);
+            }
+            for outside in [[0.0, 0.0, 300.0], [0.0, 0.0, 900.0], [900.0, 0.0, 0.0]] {
+                assert_eq!(shadow_factor(&full, &spot, quality, outside), 1.0);
+            }
         }
-        assert_eq!(
-            shadow_factor(&full, &spot, None, [0.0, 0.0, 300.0], [0, 0]),
-            1.0
-        );
-        assert_eq!(
-            shadow_factor(&full, &spot, None, [0.0, 0.0, 900.0], [0, 0]),
-            1.0
-        );
-        assert_eq!(
-            shadow_factor(&full, &spot, None, [900.0, 0.0, 0.0], [0, 0]),
-            1.0
-        );
     }
 
     #[test]
-    fn the_raster_bias_is_hpl3s_half_unit_and_unit_slope_rounded_and_reversed() {
+    fn low_is_bilinear_across_the_occluders_edge() {
+        let spot = floor_spot(2000.0, 64);
+        let map = half_occluded(64, shadow_depth(200.0, 10.0, 2000.0));
+        let at_edge = shadow_factor(&map, &spot, ShadowQuality::Low, [0.0, 0.0, 0.0]);
+        assert!(close(at_edge, 0.5), "{at_edge}");
+        let texel = 400.0 * 2.0 / 64.0;
+        let right = Rotator::new(-90.0, 0.0, 0.0).axes()[1];
+        let across = |cm: f64| right.map(|v| v * cm);
+        let quarter = shadow_factor(&map, &spot, ShadowQuality::Low, across(texel / 4.0));
+        assert!(close(quarter, 0.25), "{quarter}");
+        let far = shadow_factor(&map, &spot, ShadowQuality::Low, across(texel * 2.0));
+        assert_eq!(far, 0.0);
+    }
+
+    #[test]
+    fn medium_and_high_fall_smoothly_and_symmetrically_across_the_edge() {
+        let spot = floor_spot(2000.0, 64);
+        let map = half_occluded(64, shadow_depth(200.0, 10.0, 2000.0));
+        let texel = 400.0 * 2.0 / 64.0;
+        let right = Rotator::new(-90.0, 0.0, 0.0).axes()[1];
+        let across = |cm: f64| right.map(|v| v * cm);
+        for quality in [ShadowQuality::Medium, ShadowQuality::High] {
+            let reach = quality.kernel() as f64 / 2.0;
+            let mut previous = 1.0;
+            for step in -40_i32..=40 {
+                let x = f64::from(step) * texel * reach / 40.0;
+                let value = shadow_factor(&map, &spot, quality, across(x));
+                let mirror = shadow_factor(&map, &spot, quality, across(-x));
+                assert!(value <= previous + 1e-12, "{step} {value}");
+                assert!(close(value + mirror, 1.0), "{step} {value} {mirror}");
+                previous = value;
+            }
+            assert_eq!(previous, 0.0);
+            assert_eq!(
+                shadow_factor(&map, &spot, quality, across(-texel * reach)),
+                1.0
+            );
+        }
+    }
+
+    #[test]
+    fn the_raster_bias_is_hpl3s_half_unit_and_unit_slope_rounded_half_away() {
         let default = RasterBias::new(1.0, 1.0);
-        assert_eq!([default.constant, default.slope_scale as i32], [-1, -1]);
+        assert_eq!([default.constant, default.slope_scale as i32], [1, 1]);
         assert_eq!(
             RasterBias::new(2.0, 0.5),
             RasterBias {
-                constant: -1,
-                slope_scale: -0.5
+                constant: 1,
+                slope_scale: 0.5
             }
         );
-        assert_eq!(RasterBias::new(3.0, 0.0).constant, -2);
+        assert_eq!(RasterBias::new(3.0, 0.0).constant, 2);
         assert_eq!(RasterBias::new(0.0, 0.0).constant, 0);
         assert_eq!(RasterBias::new(0.0, 0.0).slope_scale, 0.0);
     }
@@ -696,94 +732,13 @@ mod tests {
     #[test]
     fn the_raster_bias_moves_one_float_step_and_the_slope_and_stays_in_range() {
         let bias = RasterBias::new(1.0, 1.0);
-        let depth = 10.0 / 400.0;
-        assert_eq!(bias.apply(depth, depth, 0.0), depth - 2f64.powi(-29));
+        let depth = shadow_depth(400.0, 10.0, 2000.0);
+        assert_eq!(bias.apply(depth, depth, 0.0), depth + 2f64.powi(-24));
         assert!(close(
             bias.apply(depth, depth, 1.0e-4),
-            depth - 2f64.powi(-29) - 1.0e-4
+            depth + 2f64.powi(-24) + 1.0e-4
         ));
-        assert_eq!(bias.apply(1.0e-9, 1.0e-9, 1.0), 0.0);
+        assert_eq!(bias.apply(0.9999999, 0.9999999, 1.0), 1.0);
         assert_eq!(RasterBias::new(0.0, 0.0).apply(depth, depth, 0.5), depth);
-    }
-
-    #[test]
-    fn the_raster_bias_lets_a_surface_light_itself() {
-        let spot = floor_spot(0.0);
-        let bias = RasterBias::new(1.0, 1.0);
-        let own = 10.0 / 400.0;
-        let biased = ShadowMap {
-            side: 8,
-            stored: vec![bias.apply(own, own, 0.0); 64],
-        };
-        assert_eq!(
-            shadow_factor(&biased, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
-            1.0
-        );
-        let ahead = 10.0 / 399.999;
-        let unbiased = ShadowMap {
-            side: 8,
-            stored: vec![ahead; 64],
-        };
-        assert_eq!(
-            shadow_factor(&unbiased, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
-            0.0
-        );
-        let sloped = ShadowMap {
-            side: 8,
-            stored: vec![bias.apply(ahead, ahead, 1.0e-4); 64],
-        };
-        assert_eq!(
-            shadow_factor(&sloped, &spot, None, [0.0, 0.0, 0.0], [0, 0]),
-            1.0
-        );
-    }
-
-    #[test]
-    fn low_takes_one_tap_at_the_projected_texel() {
-        let spot = floor_spot(8.0);
-        let map = half_occluded(64, 200.0);
-        let occluded = shadow_factor(&map, &spot, None, [0.0, 3.0, 0.0], [0, 0]);
-        let open = shadow_factor(&map, &spot, None, [0.0, -3.0, 0.0], [0, 0]);
-        assert_eq!([occluded, open], [0.0, 1.0]);
-    }
-
-    #[test]
-    fn the_four_tap_early_out_is_the_mean_of_every_tap_on_a_penumbra() {
-        let map = half_occluded(64, 200.0);
-        let spot = floor_spot(6.0);
-        for samples in [16, 32] {
-            let jitter = jitter_map(samples);
-            let mut penumbra = 0;
-            for step in -40_i32..=40 {
-                let point = [0.0, f64::from(step) * 0.5, 0.0];
-                let uv = gobo_uv(&spot.view_projection, point).unwrap();
-                for pixel in [[0, 0], [7, 30], [31, 31], [12, 3]] {
-                    let tap = |i: usize| {
-                        let offset = jitter.offset(pixel, i);
-                        let x = (uv[0] * 64.0 + offset[0] * spot.blur)
-                            .floor()
-                            .clamp(0.0, 63.0);
-                        let y = (uv[1] * 64.0 + offset[1] * spot.blur)
-                            .floor()
-                            .clamp(0.0, 63.0);
-                        let stored = map.stored[y as usize * 64 + x as usize];
-                        if stored * 400.0 <= 10.0 { 1.0 } else { 0.0 }
-                    };
-                    let first: f64 = (0..4).map(tap).sum();
-                    let mean = (0..samples).map(tap).sum::<f64>() / samples as f64;
-                    let value = shadow_factor(&map, &spot, Some(&jitter), point, pixel);
-                    if first == 0.0 || first == 4.0 {
-                        assert_eq!(value, first / 4.0);
-                    } else {
-                        penumbra += 1;
-                        assert!(close(value, mean), "{value} {mean}");
-                    }
-                    if step.abs() > 20 {
-                        assert!(close(value, mean), "{step} {value} {mean}");
-                    }
-                }
-            }
-            assert!(penumbra > 10, "{penumbra}");
-        }
     }
 }

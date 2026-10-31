@@ -138,6 +138,7 @@ Felipe approved this after the shadow acne at step 5. It replaces the jitter dis
 - Receiver: `p' = p + n * (1 - dot(l, n)) * 0.5` cm (HPL3's 0.005 m), projected through the spot's shadow projection and divided by `|w|`.
 - Per texel: `occlusion = clamp(1 + (stored - z) * k, 0, 1)`, with `k = sqrt(radius_m - near_m) * ((side / 14.4 + 80 / 9) / near_m)`, near and radius in metres and `side` the map's side in texels.
 - Filters, all from 2x2 gathers around `floor(uv * side - 0.5) + 0.5` with `f = fract(uv * side - 0.5)`: Low `PCF2x2`, one gather mixed bilinearly by `f`; Medium `PCF4x4`, 4 gathers at offsets of plus or minus 1 texel weighted into a 3x3-texel tent, sum / 9, then `a * a * (3 - 2a)`; High `PCF6x6`, 9 gathers at offsets -2, 0, 2, sum / 25, then the same smoothstep.
+- Tickora reads the texels with `textureLoad`, clamped to the spot's own map side, instead of `textureGather`: the same texels and weights inside the map, the same reads at the edge as a clamp-to-edge sampler, and no dependence on how an adapter rounds gather coordinates. The receiver's offset reaches the shader through the frame header's fourth float (`SHADOW_NORMAL_OFFSET_CM`), and each spot's shadow vector is (layer, side, k, radius).
 - Removed: the jitter maps and their binding, `SHADOW_BLUR`, the tap count in the frame header, `jitter_map` in the reference.
 - Test bar: unchanged, Felipe's nudge rule (every pixel within one unit unless a 0.001 cm nudge of its receiver changes the reference by more than one unit, such pixels at most 5% of the checked penumbra).
 

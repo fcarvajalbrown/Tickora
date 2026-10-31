@@ -16,7 +16,6 @@ pub const MIN_GOBO_SIDE: u32 = 16;
 pub const MAX_GOBO_SIDE: u32 = 256;
 pub const DEFAULT_SPOT_RADIUS: f64 = 10000.0;
 pub const MAX_SHADOW_SPOTS: usize = 4;
-pub const SHADOW_BLUR: f64 = 6.0;
 pub const POINT_LIGHT_SIZE: usize = 64;
 pub const SPOT_LIGHT_SIZE: usize = 160;
 pub const LIGHT_BYTES_SIZE: usize =
@@ -136,8 +135,23 @@ impl SpotLight {
         RasterBias::new(self.shadow_bias_mul, self.shadow_slope_bias_mul)
     }
 
-    pub fn shadow_normal_offset_cm(&self) -> f64 {
-        light::SHADOW_NORMAL_OFFSET_CM * f64::from(self.shadow_slope_bias_mul)
+    pub fn shadow_projection(&self) -> Mat4 {
+        light::spot_shadow_projection(
+            self.location,
+            self.rotation,
+            self.fov,
+            self.aspect,
+            self.near_plane,
+            self.attenuation_radius,
+        )
+    }
+
+    pub fn shadow_transition(&self) -> f64 {
+        light::shadow_transition(
+            self.shadow_resolution.side(),
+            self.near_plane,
+            self.attenuation_radius,
+        )
     }
 
     pub fn view_projection(&self) -> Mat4 {
@@ -190,6 +204,11 @@ impl SpotLight {
             if !(value.is_finite() && value >= 0.0) {
                 return Err(format!("spot light {name} must be finite and at least 0"));
             }
+        }
+        if self.cast_shadows && self.near_plane >= self.attenuation_radius {
+            return Err(
+                "a shadow-casting spot light needs near_plane below attenuation_radius".to_string(),
+            );
         }
         check_specular_color("spot light", self.specular_color)
     }
@@ -458,7 +477,10 @@ impl Scene3 {
         self.shadow_layers()?;
         let mut bytes = Vec::with_capacity(LIGHT_BYTES_SIZE);
         let eye = camera.location.map(|v| v as f32);
-        for value in eye.into_iter().chain([SHADOW_BLUR as f32]) {
+        for value in eye
+            .into_iter()
+            .chain([light::SHADOW_NORMAL_OFFSET_CM as f32])
+        {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         for value in self.ambient.into_iter().chain([0.0]) {
@@ -467,7 +489,7 @@ impl Scene3 {
         let counts = [
             self.lights.len() as u32,
             self.spots.len() as u32,
-            quality.taps() as u32,
+            quality.kernel() as u32,
             0,
         ];
         for value in counts {
@@ -541,8 +563,8 @@ impl Scene3 {
                         0.0,
                         shadow,
                         spot.shadow_resolution.side() as f32,
-                        spot.shadow_normal_offset_cm() as f32,
-                        0.0,
+                        spot.shadow_transition() as f32,
+                        spot.attenuation_radius as f32,
                     ]);
                 }
                 None => put(&[0.0; SPOT_LIGHT_SIZE / 4]),
@@ -800,11 +822,11 @@ mod tests {
             .light_bytes(&scene.camera, ShadowQuality::High)
             .unwrap();
         assert_eq!(bytes.len(), LIGHT_BYTES_SIZE);
-        assert_eq!(floats(&bytes[..16]), [10.0, 20.0, 30.0, SHADOW_BLUR as f32]);
+        assert_eq!(floats(&bytes[..16]), [10.0, 20.0, 30.0, 0.5]);
         assert_eq!(floats(&bytes[16..32]), [0.25, 0.5, 1.0, 0.0]);
         assert_eq!(&bytes[32..36], &1u32.to_le_bytes());
         assert_eq!(&bytes[36..40], &1u32.to_le_bytes());
-        assert_eq!(&bytes[40..44], &32u32.to_le_bytes());
+        assert_eq!(&bytes[40..44], &6u32.to_le_bytes());
         assert_eq!(
             floats(&bytes[48..112]),
             [
@@ -824,7 +846,10 @@ mod tests {
         assert!((values[11] - 45f32.to_radians().cos()).abs() < 1e-6);
         assert_eq!(values[12..16], [1.0, 4.0, -1.0, 10.0]);
         assert_eq!(values[16..20], [0.25, 0.5, 0.75, 0.0]);
-        assert_eq!(values[20..], [0.0, 256.0, 1.5, 0.0]);
+        assert_eq!(
+            values[20..],
+            [0.0, 256.0, lamp.shadow_transition() as f32, 800.0]
+        );
         assert!(bytes[spots + SPOT_LIGHT_SIZE..].iter().all(|&b| b == 0));
     }
 
@@ -846,11 +871,10 @@ mod tests {
         assert_eq!(
             cone.shadow_raster_bias(),
             RasterBias {
-                constant: -1,
-                slope_scale: -1.0
+                constant: 1,
+                slope_scale: 1.0
             }
         );
-        assert_eq!(cone.shadow_normal_offset_cm(), 3.0);
         cone.cast_specular = false;
         assert_eq!(cone.specular(), [0.0; 3]);
     }
@@ -968,7 +992,11 @@ mod tests {
         let mut scene = scene(Vec::new());
         scene.spots = vec![spot(); MAX_SPOTS + 1];
         assert!(packed(&scene).is_err());
-        let bad: [fn(&mut SpotLight); 18] = [
+        let bad: [fn(&mut SpotLight); 19] = [
+            |s| {
+                s.cast_shadows = true;
+                s.near_plane = s.attenuation_radius;
+            },
             |s| s.shadow_bias_mul = -1.0,
             |s| s.shadow_bias_mul = f32::NAN,
             |s| s.shadow_slope_bias_mul = -0.5,

@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-use tickora_render::light::{self, JitterMap, ShadowMap, ShadowSpot};
+use tickora_render::light::{self, ShadowMap, ShadowSpot};
 use tickora_render::math::Vec3;
-use tickora_render::scene3::SHADOW_BLUR;
 use tickora_render::{
     AdapterChoice, Display, Image, Material, Mesh, MeshInstance, PerspectiveCamera, PointLight,
     Primitive, Renderer, Rotator, Scene3, ShadowQuality, ShadowResolution, SpotLight, ViewMode,
@@ -171,8 +170,10 @@ fn shadow_map(spot: &SpotLight, plates: &[Plate]) -> ShadowMap {
             ndc_y * half,
         )
     };
+    let far = spot.attenuation_radius;
     let plane_depth = |plate: &Plate, direction: Vec3| {
-        spot.near_plane * direction[2] / (plate.z - spot.location[2])
+        let distance = (plate.z - spot.location[2]) / direction[2];
+        light::shadow_depth(distance, spot.near_plane, far)
     };
     let deepest = |plate: &Plate| {
         let h = plate.half;
@@ -185,11 +186,11 @@ fn shadow_map(spot: &SpotLight, plates: &[Plate]) -> ShadowMap {
                     corner[1] - spot.location[1],
                     corner[2] - spot.location[2],
                 ];
-                spot.near_plane / dot(to_corner, forward)
+                light::shadow_depth(dot(to_corner, forward), spot.near_plane, far)
             })
             .fold(0.0, f64::max)
     };
-    let mut stored = vec![0.0; side * side];
+    let mut stored = vec![1.0; side * side];
     for row in 0..side {
         for column in 0..side {
             let (x, y) = (column as f64, row as f64);
@@ -197,6 +198,9 @@ fn shadow_map(spot: &SpotLight, plates: &[Plate]) -> ShadowMap {
             if let Some((index, _)) = hit(plates, spot.location, direction) {
                 let plate = &plates[index];
                 let depth = plane_depth(plate, direction);
+                if depth > 1.0 {
+                    continue;
+                }
                 let slope = (plane_depth(plate, texel_ray(x + 1.0, y)) - depth)
                     .abs()
                     .max((plane_depth(plate, texel_ray(x, y + 1.0)) - depth).abs());
@@ -210,7 +214,7 @@ fn shadow_map(spot: &SpotLight, plates: &[Plate]) -> ShadowMap {
 struct Reference {
     plates: Vec<Plate>,
     spots: Vec<(SpotLight, ShadowMap)>,
-    jitter: Option<JitterMap>,
+    quality: ShadowQuality,
     camera: PerspectiveCamera,
 }
 
@@ -223,7 +227,7 @@ impl Reference {
                 .iter()
                 .map(|spot| (spot.clone(), shadow_map(spot, plates)))
                 .collect(),
-            jitter: (quality != ShadowQuality::Low).then(|| light::jitter_map(quality.taps())),
+            quality,
             camera: scene.camera,
         }
     }
@@ -245,7 +249,7 @@ impl Reference {
         let normal = [0.0, 0.0, 1.0];
         let mut linear = AMBIENT;
         let mut penumbra = false;
-        let mut boundary = false;
+        let mut swings = Vec::new();
         let mut lowest = 1.0_f64;
         for (spot, map) in &self.spots {
             let to_light = [
@@ -267,16 +271,18 @@ impl Reference {
                 f64::from(spot.falloff_pow),
             );
             let receiver =
-                light::shadow_receiver(point, normal, direction, spot.shadow_normal_offset_cm());
+                light::shadow_receiver(point, normal, direction, light::SHADOW_NORMAL_OFFSET_CM);
             let lookup = ShadowSpot {
                 view_projection: spot.view_projection(),
                 location: spot.location,
                 forward,
                 near_plane: spot.near_plane,
-                blur: SHADOW_BLUR,
+                far_plane: spot.attenuation_radius,
+                transition: spot.shadow_transition(),
             };
-            let factor =
-                |at: Vec3| light::shadow_factor(map, &lookup, self.jitter.as_ref(), at, pixel);
+            let factor = |at: Vec3| light::shadow_factor(map, &lookup, self.quality, at);
+            let lambert = dot(normal, direction).max(0.0);
+            let reach = f64::from(spot.intensity) * lambert * falloff * cone;
             let shadow = if spot.cast_shadows {
                 factor(receiver)
             } else {
@@ -286,9 +292,7 @@ impl Reference {
                 for dx in [-NUDGE_CM, 0.0, NUDGE_CM] {
                     for dy in [-NUDGE_CM, 0.0, NUDGE_CM] {
                         let nudged = [receiver[0] + dx, receiver[1] + dy, receiver[2]];
-                        if factor(nudged) != shadow {
-                            boundary = true;
-                        }
+                        swings.push(reach * (factor(nudged) - shadow));
                     }
                 }
             }
@@ -296,9 +300,11 @@ impl Reference {
                 penumbra = true;
             }
             lowest = lowest.min(shadow);
-            let lambert = dot(normal, direction).max(0.0);
-            linear += f64::from(spot.intensity) * lambert * falloff * cone * shadow;
+            linear += reach * shadow;
         }
+        let boundary = swings
+            .iter()
+            .any(|swing| byte(linear + swing).abs_diff(byte(linear)) > 1);
         Some(Prediction {
             linear,
             penumbra,
