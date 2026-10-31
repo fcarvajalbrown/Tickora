@@ -129,6 +129,18 @@ Yes, once, as in 8.3. The new f32 maths (the depth compare, the jitter offsets, 
 - Python: the new piece and placements are byte-stable, and `tests/tools` checks the committed meshes.
 - Goldens: both scenarios on both CI buckets, with the byte-identical check in goldens step 4.
 
+## Change at step 5: HPL3's shadow filter
+
+Felipe approved this after the shadow acne at step 5. It replaces the jitter disk, the blur and the 3 cm offset above with HPL3's spot path from its shipped `deferred_light_frag.hpsl` and `helper_shadow_filter.hpsl`, read for behaviour (notes in `research-private/bunker/NOTES.md`). Where this section and the text above disagree, this section holds.
+
+- Map depth: each casting spot renders through a standard `[0, 1]` projection with near the spot's near plane and far its radius, cleared to 1, compare Less. A stored value is the same window depth HPL3 stores, `(f / (f - n)) * (1 - n / d)`, so HPL3's constants apply unchanged. The map stays `Depth32Float`, since wgpu has no 32-bit unorm depth.
+- Raster bias: HPL3's `glPolygonOffset(1.0 * slope mul, 0.5 * bias mul)`, rounded half away from zero, so `DepthBiasState { constant: +round(0.5 * shadow_bias_mul), slope_scale: +1.0 * shadow_slope_bias_mul }`, positive now that depth grows away from the light. One pipeline per distinct bias, as before.
+- Receiver: `p' = p + n * (1 - dot(l, n)) * 0.5` cm (HPL3's 0.005 m), projected through the spot's shadow projection and divided by `|w|`.
+- Per texel: `occlusion = clamp(1 + (stored - z) * k, 0, 1)`, with `k = sqrt(radius_m - near_m) * ((side / 14.4 + 80 / 9) / near_m)`, near and radius in metres and `side` the map's side in texels.
+- Filters, all from 2x2 gathers around `floor(uv * side - 0.5) + 0.5` with `f = fract(uv * side - 0.5)`: Low `PCF2x2`, one gather mixed bilinearly by `f`; Medium `PCF4x4`, 4 gathers at offsets of plus or minus 1 texel weighted into a 3x3-texel tent, sum / 9, then `a * a * (3 - 2a)`; High `PCF6x6`, 9 gathers at offsets -2, 0, 2, sum / 25, then the same smoothstep.
+- Removed: the jitter maps and their binding, `SHADOW_BLUR`, the tap count in the frame header, `jitter_map` in the reference.
+- Test bar: unchanged, Felipe's nudge rule (every pixel within one unit unless a 0.001 cm nudge of its receiver changes the reference by more than one unit, such pixels at most 5% of the checked penumbra).
+
 ## Out of scope
 
 - Point-light shadows: HPL3 has none. Its levels fill with unshadowed point and box lights and stop leaks with light mask boxes, a separate item if Felipe wants it.
