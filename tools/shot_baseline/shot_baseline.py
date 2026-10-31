@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SCENARIOS = ["arena.json", "lighting.json"]
+DEFAULT_SCENARIOS = ["arena.json", "lighting.json", "lighting-second-room.pending.json"]
 
 
 def record(out: Path, adapter: str, binary: Path, scenarios: list[str]) -> int:

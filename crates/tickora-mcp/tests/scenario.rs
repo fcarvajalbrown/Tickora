@@ -13,6 +13,7 @@ use tickora_mcp::scenario::{self, HostKind};
 use tickora_mcp::tools;
 
 const EXPECTED_TO_FAIL: &str = ".fail.json";
+const AWAITING_GOLDENS: &str = ".pending.json";
 
 fn scenarios_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")
@@ -27,6 +28,7 @@ fn scenario_files() -> Vec<PathBuf> {
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .filter(|path| !path.to_string_lossy().ends_with(AWAITING_GOLDENS))
         .collect();
     files.sort();
     files
