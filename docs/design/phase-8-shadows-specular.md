@@ -142,6 +142,10 @@ Felipe approved this after the shadow acne at step 5. It replaces the jitter dis
 - Removed: the jitter maps and their binding, `SHADOW_BLUR`, the tap count in the frame header, `jitter_map` in the reference.
 - Test bar: unchanged, Felipe's nudge rule (every pixel within one unit unless a 0.001 cm nudge of its receiver changes the reference by more than one unit, such pixels at most 5% of the checked penumbra).
 
+## Change at step 7: materials in a vertex buffer
+
+The tolerance table at step 7 found local WARP shading every batch with the last batch's material uniform, the same fault the shadow pass hit at step 5. Group 1 no longer holds a material uniform: each batch's 16-byte material (specular and power) is a one-instance vertex buffer at slot 1, read as `@location(4)` and passed flat to the fragment stage. `tests/shadows.rs` gains a frame with two gloss materials, each checked against its own reference.
+
 ## Out of scope
 
 - Point-light shadows: HPL3 has none. Its levels fill with unshadowed point and box lights and stop leaks with light mask boxes, a separate item if Felipe wants it.
